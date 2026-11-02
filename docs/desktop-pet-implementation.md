@@ -109,7 +109,7 @@
 | 框架与退役实例回归 | 跨端追加消息 2 项通过（已包含于上述 95 项）；退役实例回调另 2 项通过 |
 | 记忆回归 | 最终合并运行 29 项通过；覆盖唤醒、共同身份、同用户跨端检索及另一个人格拒绝 |
 | 表情人物询问回归 | 14 项通过；涵盖桌宠等待时不绕道 QQ、人格问话内容及不借用 QQ 引用 ID |
-| Windows 原生窗口与安装升级 | 已在用户 Windows 的独立临时目录安装旧版包并验证原生窗口、加密配对与 WSS 展示回执；0.3.0 完整原生界面的打包自动验收正在构建，不能据此宣称最终实机通过 |
+| Windows 原生窗口与安装升级 | 已在用户 Windows 的独立临时目录安装旧版包并验证原生窗口、加密配对与 WSS 展示回执；0.3.0 的 Windows CI 已通过实际 NSIS 安装、完整原生 UI、WSS 配对、聊天展示回执、隐藏恢复及重装保留配对；用户电脑的最终安装与正式配对仍待维护通道恢复 |
 | 正式 WSS 和现有双 Bot | 已部署服务端 0.2.0；两个 QQ 实例分别确认 2893214983 / 2510093206 在线，模型配置及 OAuth 保留；客户端尚未绑定正式会话 |
 
 A01–A24 的主要服务端行为已有源码及分层测试，不能据此勾选 Windows 实机全部通过。A04/A05/A09/A11/A20/A21/A23 仍需在最终安装包与正式配对下核验；A25 需完成安装、升级与卸载验收。用户已授权远程发布和切换；客户端 PR 为 https://github.com/zhizhangzhu/Coopanion/pull/1 ，版本 0.3.0 的源提交为 `bbc36287e758d603aa297a560c937ce02e1f6224`。协议保持 `1`，补丁基线见 `overrides/desktop-pet/manifest.json`。
@@ -131,3 +131,12 @@ pnpm exec tsx scripts/pack.ts
 ```
 
 输出 `dist/AstrBot-Desktop-Pet-Setup-<version>.exe`。干净安装、配对、断线重连、锁屏与隐藏、升级保留配对、卸载不误删其他应用数据均需验收后才能正式发布。首版未配置代码签名，不声称已通过 Windows 发布认证。
+
+
+## 原生界面验收与隐藏恢复
+
+2026-11-02 的 Windows 构建与安装验收已通过：[运行记录](https://github.com/zhizhangzhu/Coopanion/actions/runs/41395180081)。安装包为 `AstrBot-Desktop-Pet-Setup-0.3.0.exe`，产物名 `AstrBot-Desktop-Pet-Windows-x64`，含验收报告及原生窗口截图。产物 ZIP 的 SHA-256 为 `918a75870fc53d95bc5e8a4139936b85dc3d83248500b4734fec4f9cc5cd6e99`。普通 CI 的 Linux、Windows 和 macOS 检查均通过。首次正式 Releases、用户电脑实机验证及正式配对尚未完成。
+
+隐藏后的窗口仍可能维持连接。旧的再次唤起判断只检查连接，因而漏掉“连接正常但窗口隐藏”的状态。原生 `app/main.cjs` 的 `ensurePet` 同时检查 `connected` 与 `onDesktop`；托盘显示使用 `showPet` 的关闭/重新打开窗口路径。Windows CI 使用同一公开面板路径验证隐藏、关闭、重新打开后 `connected` 和 `onDesktop` 均恢复。实际托盘点击和多显示器位置还需在用户电脑核验。
+
+当前生产配对文件已在服务器的私有 `.runtime/` 中生成，绑定小小情与用户 1005145948，未发送到未核验的设备。配对凭据、私有 CA、数据库、用户记录和截图均未提交。父仓库 PR 为 https://github.com/zhizhangzhu/AstrBot_snowluma_for_zzz/pull/1 。
