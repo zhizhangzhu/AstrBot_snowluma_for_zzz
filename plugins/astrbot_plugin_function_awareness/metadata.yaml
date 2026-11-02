@@ -1,0 +1,10 @@
+name: astrbot_plugin_function_awareness
+display_name: 功能自知
+author: yingjxu
+desc: 按当前Bot、人格和会话提供真实工具与后台功能状态，以及受权限控制的近期动作和联系人查询。
+version: v0.1.0
+astrbot_version: ">=4.29,<5"
+support_platforms:
+  - aiocqhttp
+  - qq_official
+  - telegram

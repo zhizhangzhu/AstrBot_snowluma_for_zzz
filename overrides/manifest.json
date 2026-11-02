@@ -1,0 +1,6 @@
+{
+  "astrbot_version": "v4.29.1",
+  "change": "GitHub source archive URLs use official codeload.github.com; raw metadata URLs and TLS validation unchanged",
+  "source_sha256": "2465c1c1f5f43db01b1ae1bbb090d006c215ee386cb6aa92a6333f5bd73ce145",
+  "override_sha256": "a05db6ab844192fc22e0f277f981ff8e3b66611d7268325bcccf1512ce22b578"
+}

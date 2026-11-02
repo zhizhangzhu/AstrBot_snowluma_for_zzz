@@ -1,0 +1,41 @@
+--- a/oauth_plug_openai_codex/provider.py
++++ b/oauth_plug_openai_codex/provider.py
+@@ -1688,7 +1688,10 @@
+         request_max_retries: int | None = None,
+         retry_rate_limits: bool | None = None,
+         oauth_web_search: str | None = None,
++        conversation_id: str | None = None,
+     ) -> LLMResponse:
++        # AstrBot owns local history; this transport-only ID is not a Codex Responses field.
++        del conversation_id
+         if retry_rate_limits is None:
+             retry_rate_limits = payloads.get("_oauth_retry_rate_limits")
+         params = self._build_responses_params(
+@@ -1722,8 +1725,10 @@
+         request_max_retries: int | None = None,
+         retry_rate_limits: bool | None = None,
+         oauth_web_search: str | None = None,
++        conversation_id: str | None = None,
+     ) -> AsyncGenerator[LLMResponse, None]:
+-        del request_max_retries, retry_rate_limits
++        # Keep native conversation metadata out of the Codex Responses payload.
++        del request_max_retries, retry_rate_limits, conversation_id
+         params = self._build_responses_params(
+             payloads,
+             tools,
+@@ -2206,6 +2211,7 @@
+         oauth_web_search=None,
+         **kwargs,
+     ) -> AsyncGenerator[LLMResponse, None]:
++        conversation_id = kwargs.pop("conversation_id", None)
+         extra_user_content_parts = kwargs.pop("extra_user_content_parts", None)
+         payloads, _context_query = await self._prepare_chat_payload(
+             prompt,
+@@ -2233,6 +2239,7 @@
+                     request_max_retries=request_max_retries,
+                     retry_rate_limits=retry_rate_limits,
+                     oauth_web_search=oauth_web_search,
++                    conversation_id=conversation_id,
+                 )
+             ) as response_stream:
+                 async for response in response_stream:

@@ -1,0 +1,11 @@
+--- a/main.py
++++ b/main.py
+@@ -332,7 +332,7 @@
+         if adjusted_count:
+             logger.info(f"已将 {adjusted_count} 个 Mixin 指令处理器绑定到插件主模块。")
+ 
+-    @filter.event_message_type(EventMessageType.ALL)
++    @filter.event_message_type(EventMessageType.ALL, priority=1000)
+     async def handle_upload_image(self, event: AstrMessageEvent):
+         user_key = f"{event.session_id}_{event.get_sender_id()}"
+         manual_upload_pending = user_key in self.upload_states

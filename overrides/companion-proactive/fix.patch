@@ -1,0 +1,313 @@
+--- data/astrbot/plugins/astrbot_plugin_private_companion/proactive_engine.py
++++ data/astrbot/plugins/astrbot_plugin_private_companion/proactive_engine.py
+@@ -9899,8 +9899,13 @@
+     def _poke_available(self) -> bool:
+         if not runtime_persona_setting(self, "enable_poke_action", False):
+             return False
+-        if self._resolve_aiocqhttp_client() is None:
+-            return False
++        client = self._resolve_aiocqhttp_client()
++        if client is None:
++            return False
++        # Match _send_single_poke: OneBot clients already provide native pokes.
++        # The optional pokepro plugin is only needed as a fallback sender.
++        if any(callable(getattr(client, method, None)) for method in ("friend_poke", "group_poke")):
++            return True
+         try:
+             from data.plugins.astrbot_plugin_pokepro.core.send_poke import PokeSender  # noqa: F401
+             return True
+--- data/astrbot/plugins/astrbot_plugin_private_companion/news_exploration.py
++++ data/astrbot/plugins/astrbot_plugin_private_companion/news_exploration.py
+@@ -1865,7 +1865,7 @@
+                 "Accept": "application/json, text/plain, */*",
+                 "Accept-Encoding": "gzip, deflate",
+             }
+-            async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
++            async with aiohttp.ClientSession(timeout=timeout, headers=headers, trust_env=True) as session:
+                 for query in queries:
+                     if len(items) >= max(1, runtime_persona_setting(self, "news_max_items_per_source", 5)):
+                         break
+@@ -2077,7 +2077,7 @@
+                 "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+                 "Referer": "https://mp.weixin.qq.com/",
+             }
+-            async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
++            async with aiohttp.ClientSession(timeout=timeout, headers=headers, trust_env=True) as session:
+                 async with session.get(safe_url, allow_redirects=True) as resp:
+                     if resp.status >= 400:
+                         return {}
+@@ -2159,7 +2159,7 @@
+                 "Accept": "application/json, text/plain, */*",
+                 "Accept-Encoding": "gzip, deflate",
+             }
+-            async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
++            async with aiohttp.ClientSession(timeout=timeout, headers=headers, trust_env=True) as session:
+                 safe_cid = _safe_int(cid, 0, 0)
+                 if safe_cid <= 0:
+                     async with session.get(f"https://api.bilibili.com/x/web-interface/view?bvid={safe_bvid}") as resp:
+@@ -2288,7 +2288,7 @@
+                 "Accept": "application/json, text/plain, */*",
+                 "Accept-Encoding": "gzip, deflate",
+             }
+-            async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
++            async with aiohttp.ClientSession(timeout=timeout, headers=headers, trust_env=True) as session:
+                 if not context.get("title") or not context.get("aid") or not context.get("cid"):
+                     async with session.get("https://api.bilibili.com/x/web-interface/view", params={"bvid": safe_bvid}) as resp:
+                         if resp.status < 400:
+@@ -2567,7 +2567,7 @@
+                 "Accept": "application/json, text/plain, */*",
+                 "Accept-Encoding": "gzip, deflate",
+             }
+-            async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
++            async with aiohttp.ClientSession(timeout=timeout, headers=headers, trust_env=True) as session:
+                 async with session.get(f"https://api.bilibili.com/x/web-interface/view?bvid={bvid}") as resp:
+                     if resp.status >= 400:
+                         return await self._fetch_bilibili_news_search_fallback(source)
+@@ -2607,7 +2607,7 @@
+                 "Accept": "application/json, text/plain, */*",
+                 "Accept-Encoding": "gzip, deflate",
+             }
+-            async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
++            async with aiohttp.ClientSession(timeout=timeout, headers=headers, trust_env=True) as session:
+                 async with session.get(url) as resp:
+                     probe["http_status"] = resp.status
+                     payload = await resp.json(content_type=None)
+@@ -2658,7 +2658,7 @@
+                 f"https://api.bilibili.com/x/space/arc/search?mid={mid}&pn=1&ps={max(1, min(30, item_limit))}&order=pubdate&jsonp=jsonp",
+                 f"https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/space?host_mid={mid}&timezone_offset=-480&features=itemOpusStyle",
+             ]
+-            async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
++            async with aiohttp.ClientSession(timeout=timeout, headers=headers, trust_env=True) as session:
+                 for url in api_urls:
+                     try:
+                         async with session.get(url) as resp:
+@@ -2739,7 +2739,7 @@
+ 
+             timeout = aiohttp.ClientTimeout(total=12)
+             headers = {"User-Agent": f"{PLUGIN_NAME}/news-reader", "Accept-Encoding": "gzip, deflate"}
+-            async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
++            async with aiohttp.ClientSession(timeout=timeout, headers=headers, trust_env=True) as session:
+                 async with session.get(url) as resp:
+                     if resp.status >= 400:
+                         return []
+@@ -3881,6 +3881,9 @@
+         if not settings.get("web_search", False):
+             return False
+         provider = str(settings.get("websearch_provider") or "").strip()
++        if provider == "anysearch":
++            # AstrBot supports anonymous AnySearch requests with a daily quota.
++            return True
+         if provider == "tavily":
+             return bool(settings.get("websearch_tavily_key"))
+         if provider == "bocha":
+@@ -4226,7 +4229,7 @@
+             import aiohttp
+ 
+             timeout = aiohttp.ClientTimeout(total=20)
+-            async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
++            async with aiohttp.ClientSession(timeout=timeout, headers=headers, trust_env=True) as session:
+                 if get_url:
+                     resp_ctx = session.get(get_url)
+                 else:
+@@ -4286,6 +4289,7 @@
+             "websearch_bocha_key",
+             "websearch_brave_key",
+             "websearch_firecrawl_key",
++            "websearch_anysearch_key",
+         ):
+             value = settings.get(key)
+             if isinstance(value, str):
+@@ -4298,7 +4302,17 @@
+             settings["websearch_baidu_app_builder_key"] = baidu_key.strip()
+         try:
+             from astrbot.core.tools import web_search_tools as ws
+-            if provider == "tavily":
++            if provider == "anysearch":
++                payload = {
++                    "query": cleaned_query,
++                    "max_results": max(1, min(20, runtime_persona_setting(self, "web_exploration_max_results", 6))),
++                }
++                if topic == "news":
++                    payload["content_types"] = ["news"]
++                raw_results = await asyncio.wait_for(
++                    ws._anysearch_search(settings, payload), timeout=20.0
++                )
++            elif provider == "tavily":
+                 payload = {
+                     "query": cleaned_query,
+                     "max_results": max(
+@@ -4460,7 +4474,7 @@
+                 "Accept": "application/json",
+                 "Referer": "https://weibo.com/",
+             }
+-            async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
++            async with aiohttp.ClientSession(timeout=timeout, headers=headers, trust_env=True) as session:
+                 async with session.get("https://weibo.com/ajax/side/hotSearch") as resp:
+                     if resp.status >= 400:
+                         return []
+@@ -4500,7 +4514,7 @@
+             import aiohttp
+ 
+             timeout = aiohttp.ClientTimeout(total=12)
+-            async with aiohttp.ClientSession(timeout=timeout, headers={"User-Agent": f"{PLUGIN_NAME}/hot-trends"}) as session:
++            async with aiohttp.ClientSession(timeout=timeout, headers={"User-Agent": f"{PLUGIN_NAME}/hot-trends"}, trust_env=True) as session:
+                 async with session.get(
+                     "https://hn.algolia.com/api/v1/search",
+                     params={
+--- data/astrbot/plugins/astrbot_plugin_private_companion/qzone_runtime.py
++++ data/astrbot/plugins/astrbot_plugin_private_companion/qzone_runtime.py
+@@ -818,7 +818,7 @@
+             request_headers.update(headers)
+         timeout = aiohttp.ClientTimeout(total=timeout_seconds)
+         try:
+-            async with aiohttp.ClientSession(timeout=timeout, headers=request_headers) as session:
++            async with aiohttp.ClientSession(timeout=timeout, headers=request_headers, trust_env=True) as session:
+                 async with session.request(method, url, params=params, data=data) as response:
+                     text = await response.text()
+                     parsed = self._qzone_parse_response(text)
+--- data/astrbot/plugins/astrbot_plugin_private_companion/qzone_auth.py
++++ data/astrbot/plugins/astrbot_plugin_private_companion/qzone_auth.py
+@@ -228,7 +228,7 @@
+         }
+         try:
+             timeout = aiohttp.ClientTimeout(total=12)
+-            async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
++            async with aiohttp.ClientSession(timeout=timeout, headers=headers, trust_env=True) as session:
+                 async with session.get(url) as response:
+                     text = await response.text()
+                     if response.status >= 400:
+--- data/astrbot/plugins/astrbot_plugin_private_companion/qzone_media.py
++++ data/astrbot/plugins/astrbot_plugin_private_companion/qzone_media.py
+@@ -200,7 +200,7 @@
+                 "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+                 "Referer": f"https://user.qzone.qq.com/{self._qzone_context_from_cookies(cookie_header)['uin']}",
+             }
+-            async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
++            async with aiohttp.ClientSession(timeout=timeout, headers=headers, trust_env=True) as session:
+                 current_url = text
+                 for _redirect in range(4):
+                     async with session.get(current_url, allow_redirects=False) as response:
+--- data/astrbot/plugins/astrbot_plugin_memory_companion/core/service.py
++++ data/astrbot/plugins/astrbot_plugin_memory_companion/core/service.py
+@@ -1019,6 +1019,10 @@
+         self._ensure_reconstruction_turn_token(event, ctx)
+         self._apply_private_companion_preferred_address(ctx, req=req, event=event)
+         if self._private_companion_internal_generation_event(event):
++            # Internal requests still carry global tools. Project their schemas
++            # before skipping capture/injection so raw query contracts do not
++            # reach providers that reject conditional top-level schemas.
++            self._apply_reconstruction_contract(req, ctx, event=event)
+             self._emit_hook_stage_timing(stage_timer, ctx, note="internal_generation_skip")
+             return
+         if looks_like_command(ctx.message_text):
+--- /dev/null
++++ data/astrbot/plugins/astrbot_plugin_private_companion/tests/test_native_poke_anysearch_compat.py
+@@ -0,0 +1,108 @@
++"""Deployment regressions: native OneBot pokes and anonymous AnySearch."""
++import unittest
++from types import SimpleNamespace
++from unittest.mock import AsyncMock, patch
++from astrbot_plugin_private_companion.proactive_engine import ProactiveEngineMixin
++from astrbot_plugin_private_companion.news_exploration import NewsExplorationMixin
++
++class PokeHarness(ProactiveEngineMixin):
++    enable_poke_action = True
++    def __init__(self, client):
++        self.client = client
++    def _resolve_aiocqhttp_client(self):
++        return self.client
++
++class SearchHarness(NewsExplorationMixin):
++    data = {}
++    web_exploration_max_results = 6
++    def __init__(self, key=None):
++        self.settings = {'web_search': True, 'websearch_provider': 'anysearch', 'websearch_anysearch_key': key or []}
++    def _astrbot_web_search_provider_settings(self, umo=''):
++        return self.settings.copy()
++    def _custom_web_exploration_search_configured(self):
++        return False
++    def _web_search_cooldown_remaining(self, provider):
++        return 0
++
++class NativeCompatibilityTests(unittest.IsolatedAsyncioTestCase):
++    def test_native_friend_poke_needs_no_pokepro(self):
++        self.assertTrue(PokeHarness(SimpleNamespace(friend_poke=AsyncMock()))._poke_available())
++    def test_poke_disabled_or_missing_client_stays_unavailable(self):
++        owner = PokeHarness(SimpleNamespace(friend_poke=AsyncMock()))
++        owner.enable_poke_action = False
++        self.assertFalse(owner._poke_available())
++        self.assertFalse(PokeHarness(None)._poke_available())
++    def test_anysearch_anonymous_is_available(self):
++        self.assertTrue(SearchHarness()._astrbot_web_search_available())
++    async def test_anysearch_routes_and_normalizes_results(self):
++        owner = SearchHarness('test-key')
++        search = AsyncMock(return_value=[SimpleNamespace(title='Title', url='https://example.com', snippet='Body')])
++        with patch('astrbot.core.tools.web_search_tools._anysearch_search', search, create=True):
++            results = await owner._run_astrbot_web_search('test query', usage='web_exploration')
++        self.assertEqual(len(results), 1)
++        self.assertEqual(results[0]['provider'], 'anysearch')
++        self.assertEqual(search.call_args.args[0]['websearch_anysearch_key'], ['test-key'])
++        self.assertEqual(search.call_args.args[1]['query'], 'test query')
++    async def test_anysearch_news_content_type(self):
++        search = AsyncMock(return_value=[])
++        with patch('astrbot.core.tools.web_search_tools._anysearch_search', search, create=True):
++            await SearchHarness()._run_astrbot_web_search('news', topic='news')
++        self.assertEqual(search.call_args.args[1]['content_types'], ['news'])
++
++class InternalMemorySchemaTests(unittest.IsolatedAsyncioTestCase):
++    async def test_internal_generation_projects_tools_before_skip(self):
++        from unittest.mock import Mock
++        from astrbot_plugin_memory_companion.core.service import MemoryCompanionService
++        ctx = SimpleNamespace(message_text='background generation', session_id='test')
++        req = SimpleNamespace(system_prompt='')
++        event = SimpleNamespace(private_companion_proactive_framework=True)
++        owner = SimpleNamespace(
++            config=SimpleNamespace(bool=lambda key, default=False: default),
++            identity=SimpleNamespace(resolve_event_context=AsyncMock(return_value=ctx)),
++            capture=None,
++            _private_companion_internal_generation_event=lambda e: True,
++        )
++        for name in [
++            '_mark_memory_companion_injection_state', '_ensure_lifecycle_maintenance_dispatcher',
++            '_ensure_wal_checkpoint_loop', '_ensure_acl_projection_reconcile_loop',
++            '_sanitize_session_context_message_text', '_apply_companion_relationship_projection',
++            '_apply_companion_expression_decision', '_ensure_reconstruction_turn_token',
++            '_apply_private_companion_preferred_address', '_apply_reconstruction_contract',
++            '_emit_hook_stage_timing',
++        ]:
++            setattr(owner, name, Mock())
++        await MemoryCompanionService.handle_llm_request(owner, event, req)
++        owner._apply_reconstruction_contract.assert_called_once_with(req, ctx, event=event)
++
++class ExplicitProxyTests(unittest.IsolatedAsyncioTestCase):
++    async def test_qzone_read_uses_environment_proxy(self):
++        import json
++        from unittest.mock import Mock
++        from astrbot_plugin_private_companion.qzone_runtime import QzoneRuntimeMixin
++        class Qzone(QzoneRuntimeMixin):
++            _qzone_context_from_cookies = staticmethod(lambda value: {'uin': 1, 'cookie_header': value})
++            _qzone_parse_response = staticmethod(json.loads)
++        response = SimpleNamespace(status=200, text=AsyncMock(return_value='{"code":0}'))
++        request_cm = AsyncMock()
++        request_cm.__aenter__.return_value = response
++        session = SimpleNamespace(request=Mock(return_value=request_cm))
++        session_cm = AsyncMock()
++        session_cm.__aenter__.return_value = session
++        with patch('aiohttp.ClientSession', return_value=session_cm) as factory:
++            result = await Qzone()._qzone_request(None, 'GET', 'https://user.qzone.qq.com/test', cookie_header='test')
++        self.assertTrue(factory.call_args.kwargs['trust_env'])
++        self.assertEqual(result['code'], 0)
++
++    async def test_news_reader_uses_environment_proxy(self):
++        from unittest.mock import Mock
++        reader = SearchHarness()
++        response = SimpleNamespace(status=200, text=AsyncMock(return_value='<rss><channel><item><title>Item</title><link>https://example.com</link></item></channel></rss>'))
++        request_cm = AsyncMock()
++        request_cm.__aenter__.return_value = response
++        session = SimpleNamespace(get=Mock(return_value=request_cm))
++        session_cm = AsyncMock()
++        session_cm.__aenter__.return_value = session
++        with patch('aiohttp.ClientSession', return_value=session_cm) as factory:
++            items = await reader._fetch_news_source({'name':'test', 'url':'https://example.com/rss'})
++        self.assertTrue(factory.call_args.kwargs['trust_env'])
++        self.assertEqual(len(items), 1)

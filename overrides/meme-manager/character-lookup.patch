@@ -1,0 +1,395 @@
+--- a/main.py
++++ b/main.py
+@@ -23,6 +23,7 @@
+     remember_candidates,
+     search_memes_multi_pack,
+ )
++from .backend.semantic.metadata_search import has_searchable_metadata, search_metadata
+ from .backend.semantic.storage import load_metadata, semantic_metadata_is_complete
+ from .backend.semantic.task import SemanticTaskManager
+ from .config import (
+@@ -643,6 +644,35 @@
+ 
+         return False
+ 
++    def _metadata_search_ready(self, event, req) -> bool:
++        """Expose exact caption/tag lookup without requiring an embedding API."""
++        if event is None or not self._reply_model_supports_tools(event):
++            return False
++        tool_set = getattr(req, "func_tool", None)
++        get_tool = getattr(tool_set, "get_tool", None)
++        if not callable(get_tool) or not get_tool("search_memes"):
++            return False
++        context = self._resolve_runtime_pack_context(event=event, req=req)
++        contexts = [{"pack_id": pack_id, "pack_dir": get_pack_paths(pack_id)["pack_dir"]}
++                    for pack_id in context.get("pack_ids", [])]
++        return has_searchable_metadata(contexts)
++
++    @staticmethod
++    def _metadata_search_prompt() -> str:
++        return (
++            "\n\n[按人物和画面找回已有表情]\n"
++            "当前已收集图片的描述和标签可通过 search_memes 检索，不需要向量模型。"
++            "用户要求某个人物、物品、刚收集的某张表情，或要求确认是否已经收录时，"
++            "调用 search_memes，query 保留人物名、物品和动作，例如‘橘雪莉 放大镜 观察’。"
++            "它检索已有语义资料，不会触发新图片收集，也不保证所有旧图库已经有描述。"
++            "从工具实际返回的候选中选图；把完整 id 写成 &&meme:...&& 独占一行，"
++            "即可通过表情包管理器请求发送原图片；不要把分类随机图当成指定人物或指定图片。"
++            "普通聊天仍可按前面的分类标记随机配图；调用搜索后只使用本轮候选 ID。"
++            "不得凭空声称没有发送能力，候选为空只代表没有匹配描述，不能声称整个图库为空。"
++            "自动收集在后台独立运行，聊天中没有收集工具不代表无法收集；"
++            "只有实际查到对应候选才能确认该图已可复用。标记是发送请求，不代表已送达。"
++        )
++
+     @staticmethod
+     def _remove_semantic_tool(req: ProviderRequest) -> None:
+         """语义模式不可用时，从当前请求的工具集中移除搜索工具。"""
+@@ -859,7 +889,13 @@
+             if semantic_tool_ready:
+                 semantic_mode = "tool"
+         semantic_active = bool(semantic_mode)
++        metadata_tool_ready = (not semantic_active and not self.emotion_llm_enabled
++                               and self._metadata_search_ready(event, req))
+         if event is not None and hasattr(event, "set_extra"):
++            event.set_extra("meme_manager_metadata_search_available", metadata_tool_ready)
++            event.set_extra("meme_manager_metadata_verified_pack_ids",
++                            ",".join(event.get_extra("meme_manager_runtime_pack_ids") or [])
++                            if metadata_tool_ready else "")
+             event.set_extra("meme_manager_semantic_active", semantic_active)
+             event.set_extra("meme_manager_semantic_mode", semantic_mode)
+             # Store verified pack IDs for later validation.
+@@ -883,7 +919,8 @@
+                 + self._semantic_system_prompt()
+             )
+             return
+-        self._remove_semantic_tool(req)
++        if not metadata_tool_ready:
++            self._remove_semantic_tool(req)
+         if semantic_mode == "llm" or self.emotion_llm_enabled:
+             req.system_prompt = self._strip_meme_prompt(req.system_prompt)
+             return
+@@ -916,6 +953,8 @@
+             return
+         category_mapping_string = dict_to_string(category_mapping)
+         sys_prompt_add = self._build_meme_prompt(category_mapping_string)
++        if metadata_tool_ready:
++            sys_prompt_add += self._metadata_search_prompt()
+         req.system_prompt = self._strip_meme_prompt(
+             req.system_prompt
+         ) + self._wrap_meme_prompt(sys_prompt_add)
+@@ -940,17 +979,28 @@
+ 
+     @llm_tool(name="search_memes")
+     async def search_memes_tool(self, event: AstrMessageEvent, query: str) -> str:
+-        """Find optional meme images for the assistant's intended expression.
++        """Find saved meme images by character, visible objects, actions or intended expression.
+ 
+         Args:
+-            query(string): A short description of the assistant's intended emotion,
+-                attitude or action, including who it refers to. Search at most once
+-                per reply and only when an image would help.
++            query(string): Character name plus objects, actions or expression. Also
++                use this to find a specific recently collected meme. Search at most
++                once per reply; include concrete visual keywords from the conversation.
+ 
+         Returns:
+             JSON candidates with IDs, captions and tags. Search does not send images;
+             emit a selected candidate's complete ID between && to request delivery.
+         """
++        metadata_mode = bool(event.get_extra("meme_manager_metadata_search_available"))
++        if metadata_mode:
++            context = self._resolve_runtime_pack_context(event=event)
++            pack_ids = context.get("pack_ids", [])
++            if ",".join(pack_ids) != str(event.get_extra("meme_manager_metadata_verified_pack_ids") or ""):
++                return dumps_result({"ok": False, "reason": "本轮绑定图包已经变化，请重试"})
++            # Switch only this explicit lookup turn to the existing validated-ID sender.
++            # Ordinary turns keep the category path and all unannotated legacy packs.
++            event.set_extra("meme_manager_semantic_active", True)
++            event.set_extra("meme_manager_semantic_mode", "tool")
++            event.set_extra("meme_manager_semantic_verified_pack_ids", ",".join(pack_ids))
+         if (
+             not self._semantic_mode_active(event)
+             or str(event.get_extra("meme_manager_semantic_mode") or "") != "tool"
+@@ -987,14 +1037,20 @@
+                     {"pack_id": pack_id, "pack_dir": paths["pack_dir"]}
+                 )
+ 
+-            result = await search_memes_multi_pack(
+-                pack_contexts,
+-                PLUGIN_DATA_DIR,
+-                query,
+-                self._resolve_embedding_provider,
+-                top_k=self.semantic_top_k,
+-                min_score=self.semantic_min_score,
+-            )
++            if metadata_mode:
++                result = await asyncio.to_thread(
++                    search_metadata, pack_contexts, PLUGIN_DATA_DIR, query,
++                    top_k=self.semantic_top_k,
++                )
++            else:
++                result = await search_memes_multi_pack(
++                    pack_contexts,
++                    PLUGIN_DATA_DIR,
++                    query,
++                    self._resolve_embedding_provider,
++                    top_k=self.semantic_top_k,
++                    min_score=self.semantic_min_score,
++                )
+ 
+             records = candidate_records_multi_pack(
+                 pack_contexts, result.get("candidates") or []
+--- a/backend/auto_collect.py
++++ b/backend/auto_collect.py
+@@ -33,6 +33,7 @@
+     _structured_output_is_unsupported,
+     prepare_visual_inputs,
+ )
++from .semantic.metadata_search import character_reference_images
+ from .semantic.models import PROMPT_VERSION, REVIEW_CATEGORY
+ from .semantic.storage import save_collected_image_semantic
+ 
+@@ -42,7 +43,7 @@
+ AUTO_COLLECT_STATE_PATH = PLUGIN_DATA_DIR / "auto_collect_state.json"
+ AUTO_COLLECT_TEMP_DIR = TEMP_DIR / "auto_collect"
+ AUTO_COLLECT_SCHEMA_VERSION = 1
+-AUTO_COLLECT_PROMPT_VERSION = "auto-collect-v2-review"
++AUTO_COLLECT_PROMPT_VERSION = "auto-collect-v3-character-reference"
+ MAX_IMAGE_BYTES = 20 * 1024 * 1024
+ MAX_IMAGE_PIXELS = 40_000_000
+ MAX_DECISION_CACHE_ITEMS = 2000
+@@ -902,13 +903,34 @@
+             source_file.write(content)
+             source_file.close()
+             visual_paths, frame_paths = prepare_visual_inputs(source_file.name)
++            target_frame_count = len(visual_paths)
++            reference_labels = []
++            for reference in character_reference_images(PLUGIN_DATA_DIR, self.target_pack_id):
++                try:
++                    reference_paths, reference_temps = prepare_visual_inputs(reference["path"])
++                    frame_paths.extend(reference_temps)
++                    visual_paths.append(reference_paths[0])
++                    reference_labels.append({"image_number": len(visual_paths),
++                                             "name": reference["name"], "aliases": reference["aliases"]})
++                except Exception:
++                    logger.warning("人物参考图准备失败：%s", reference["name"], exc_info=True)
+             prompt = (
++                f"前 {target_frame_count} 张图片是本次待收集图片的连续采样帧。"
++                "只根据这些帧判断是否表情包及其动作、道具、文字和用途。\n"
++                "之后的图片仅为用户人工确认身份的人物参考图，不是待收集内容，"
++                "不得把参考图的动作、道具或文字复制到目标描述中。"
++                "请比对独特外观确认是否同一人物；不匹配或不确定时留空，不要强行套用名字。\n"
++                "人物参考图信息：" + json.dumps(reference_labels, ensure_ascii=False) + "\n"
+                 "可选分类及用途如下：\n"
+                 + json.dumps(categories, ensure_ascii=False, indent=2)
+                 + "\n请返回："
+                 + '{"is_meme":true,"meme_confidence":0.0,"category":"",'
+                 + '"category_confidence":0.0,"reason":"",'
+-                + '"caption":"","tags":[],"visible_text":""}'
++                + '"caption":"","tags":[],"visible_text":"",'
++                + '"character_name":"","character_confidence":0.0,"character_evidence":""}'
++                + "\ncharacter_name 仅填写可靠人物名；未知留空。character_confidence 为 0 到 1，"
++                + "character_evidence 简述可核对的视觉特征或参考图对应关系；"
++                + "确认人物时 caption 先写人名，tags 优先包含人名。"
+             )
+             request_data = {
+                 "chat_provider_id": self.vision_provider_id,
+@@ -971,7 +993,30 @@
+         tags = payload.get("tags", [])
+         if not isinstance(tags, list):
+             tags = []
++        caption = str(payload.get("caption") or "").strip()[:1000]
++        character_name = str(payload.get("character_name") or "").strip()[:80]
++        raw_character_name = character_name
++        character_evidence = str(payload.get("character_evidence") or "").strip()[:300]
++        try:
++            character_confidence = float(payload.get("character_confidence", 0) or 0)
++        except (TypeError, ValueError):
++            character_confidence = 0.0
++        if (not math.isfinite(character_confidence) or character_confidence < 0.9
++                or not character_evidence or any(word in character_name for word in ["未知", "疑似", "不确定", "无法确认"])):
++            character_name = ""
++        if raw_character_name and not character_name:
++            # Do not leave a rejected identity in the searchable caption/tags.
++            caption = caption.replace(raw_character_name, "图中人物")
++            tags = [tag for tag in tags if raw_character_name not in str(tag)]
++        if character_name:
++            if character_name not in caption:
++                caption = f"{character_name}：{caption}"[:1000]
++            tags = [character_name, f"角色:{character_name}", *tags]
++        tags = list(dict.fromkeys(str(tag).strip()[:100] for tag in tags if str(tag).strip()))[:12]
+         return {
++            "character_name": character_name,
++            "character_confidence": character_confidence if math.isfinite(character_confidence) else 0.0,
++            "character_evidence": character_evidence,
+             "semantic_prompt_version": PROMPT_VERSION,
+             "semantic_category": category,
+             "vision_model": self.vision_provider_id,
+@@ -980,8 +1025,8 @@
+             "category": category,
+             "category_confidence": category_confidence,
+             "reason": str(payload.get("reason") or "").strip()[:500],
+-            "caption": str(payload.get("caption") or "").strip()[:1000],
+-            "tags": [str(tag).strip()[:100] for tag in tags[:12] if str(tag).strip()],
++            "caption": caption,
++            "tags": tags,
+             "visible_text": str(payload.get("visible_text") or "").strip()[:1000],
+         }
+ 
+--- a/backend/semantic/caption.py
++++ b/backend/semantic/caption.py
+@@ -18,6 +18,13 @@
+ 
+ 请在内部完成以下分析，不要输出分析过程：
+ 
++零、优先识别人物身份
++- 首先判断图中角色或吉祥物是谁，再分析动作、情绪和聊天用途；人物身份是重要检索维度，不要只写“蓝发少女”等泛称。
++- 能高置信确认时，在 caption 开头写规范人物名，在 tags 的内容标签前部写人物名、常用别名及可靠的作品名，然后保留动作、道具和用法标签。
++- 人物识别依据应为多个独特视觉特征、图中文字、可靠已有知识或本次提供的人工确认参考图，不能仅凭发色、画风或当前聊天人格认人。
++- 用户已人工确认的参考图可用于比对同一人物，不得把每张新图都强行归为该人物；分清本次待识别图片和参考图。
++- 无法可靠确认就写未知人物的视觉特征，省略具体人名和作品名；不要把“疑似某人”作为已确认身份标签。
++
+ 一、分离画面证据
+ - 识别主体的表情、视线、姿势、动作、物品、特效、标点和原始文字。
+ - 区分原图内容与后期叠加的文字、emoji、符号、裁切和夸张特效。后期元素通常是在替图片“配语气”，不能误当成人物原本的表情或物品。
+@@ -56,8 +63,8 @@
+ CAPTION_PROMPT = (
+     CAPTION_ANALYSIS_PROMPT
+     + """最后只返回严格 JSON，不要使用 Markdown，不要增加字段：
+-- caption：一到两句自然中文；先概括核心梗义和复合语气，再说明典型触发语境或用法；身份仅在已可靠核实时提及。
+-- tags：6 到 10 个细粒度中文标签，覆盖核心梗义、说话视角、行为归属、言语功能、复合语气、触发场景及关键视觉/文字线索。
++- caption：一到两句自然中文；身份可靠时先写人物名，再概括核心梗义、复合语气及典型用法；身份未知时描述外观，不猜名字。
++- tags：6 到 10 个细粒度中文标签，优先包含可靠人物名、常用别名及作品名，再覆盖核心梗义、说话视角、行为归属、语气、场景及视觉/文字线索。
+ - visible_text：图片中清晰可见的原始文字，没有则为空字符串。
+ - category_fit：只能是 match、uncertain、conflict。图片证据相容时为 match；无法可靠判断时为 uncertain；画面由另一种明确情绪或用途主导、且缺少当前分类所需的直接证据时为 conflict。
+ - category_review_reason：match 时为空字符串；uncertain 或 conflict 时，用一句简短中文说明复核原因。
+--- a/backend/semantic/metadata_search.py
++++ b/backend/semantic/metadata_search.py
+@@ -0,0 +1,127 @@
++"""Local caption/tag lookup when no embedding provider is configured."""
++
++from __future__ import annotations
++
++import json
++import re
++import unicodedata
++from pathlib import Path
++from typing import Any
++
++from astrbot.api import logger
++
++from .models import IMAGE_EXTENSIONS, REVIEW_CATEGORY, build_id_map
++from .storage import file_sha256, load_metadata, safe_relative_path
++
++
++def _normalize(value: Any) -> str:
++    return re.sub(r"[^\w\u3400-\u9fff]+", "", unicodedata.normalize("NFKC", str(value or "")).casefold())
++
++
++def _entries(pack_contexts: list[dict[str, Any]]):
++    for context in pack_contexts:
++        try:
++            metadata = load_metadata(context["pack_dir"])
++            for entry_id, item in metadata.get("images", {}).items():
++                if not isinstance(item, dict) or item.get("category") == REVIEW_CATEGORY:
++                    continue
++                if item.get("caption_status") != "done" or not item.get("caption"):
++                    continue
++                path = safe_relative_path(context["pack_dir"], item.get("relative_path", ""))
++                if path and path.is_file() and path.suffix.lower() in IMAGE_EXTENSIONS:
++                    yield context, str(entry_id), item, path
++        except Exception:
++            logger.warning("Metadata lookup unavailable for pack %s", context.get("pack_id"), exc_info=True)
++
++
++def has_searchable_metadata(pack_contexts: list[dict[str, Any]]) -> bool:
++    return next(_entries(pack_contexts), None) is not None
++
++
++def load_character_references(plugin_data_dir: Path | str) -> list[dict[str, Any]]:
++    path = Path(plugin_data_dir) / "character_references.json"
++    if not path.is_file():
++        return []
++    try:
++        payload = json.loads(path.read_text(encoding="utf-8-sig"))
++        return [item for item in payload.get("characters", []) if isinstance(item, dict) and item.get("name")]
++    except Exception:
++        logger.warning("Could not read local character references", exc_info=True)
++        return []
++
++
++def character_reference_images(plugin_data_dir: Path | str, target_pack_id: str):
++    """Read explicit user-confirmed identities; never infer identity from hair alone."""
++    from ..packs.resolver import get_pack_paths
++
++    results = []
++    for reference in load_character_references(plugin_data_dir):
++        if reference.get("target_pack_id") != target_pack_id:
++            continue
++        try:
++            pack_dir = get_pack_paths(reference["pack_id"])["pack_dir"]
++            item = load_metadata(pack_dir).get("images", {}).get(reference.get("entry_id"), {})
++            path = safe_relative_path(pack_dir, item.get("relative_path", ""))
++            if item.get("category") == REVIEW_CATEGORY or not path or not path.is_file():
++                continue
++            digest = reference.get("content_sha256")
++            if not digest or item.get("content_sha256") != digest or file_sha256(path) != digest:
++                continue
++            results.append({"name": str(reference["name"])[:80], "aliases": reference.get("aliases", [])[:6], "path": path})
++            if len(results) >= 3:
++                break
++        except Exception:
++            logger.warning("Character reference unavailable: %s", reference.get("name"), exc_info=True)
++    return results
++
++
++def search_metadata(pack_contexts: list[dict[str, Any]], plugin_data_dir: Path | str,
++                    query: str, *, top_k: int = 5) -> dict[str, Any]:
++    text = _normalize(str(query or "")[:1000])
++    for filler in ("表情包", "表情", "图片", "动图", "刚才", "那个", "这张", "收集", "发给我", "发送"):
++        text = text.replace(filler, "")
++    if len(text) < 2:
++        return {"ok": True, "candidates": [], "reason": "请提供人物、物品、动作或具体画面关键词"}
++    entries = list(_entries(pack_contexts))
++    known_characters = {}
++    for reference in load_character_references(plugin_data_dir):
++        known_characters[str(reference["name"])] = [str(reference["name"]), *reference.get("aliases", [])]
++    for _, _, item, _ in entries:
++        for tag in item.get("tags", []):
++            if str(tag).startswith("角色:"):
++                name = str(tag)[3:]
++                known_characters.setdefault(name, [name])
++    requested_characters = [aliases for aliases in known_characters.values()
++                            if any(len(_normalize(alias)) >= 2 and _normalize(alias) in text for alias in aliases)]
++    query_grams = {text[i:i + 2] for i in range(len(text) - 1)}
++    ranked = []
++    for context, entry_id, item, path in entries:
++        tags = [str(tag) for tag in item.get("tags", []) if not str(tag).startswith("category:")]
++        caption = str(item.get("caption", ""))
++        document = _normalize(" ".join([caption, *tags, str(item.get("visible_text", ""))]))
++        if requested_characters and not all(any(_normalize(alias) in document for alias in aliases) for aliases in requested_characters):
++            continue
++        tag_matches = sum(3 + min(len(_normalize(tag)), 12) for tag in tags
++                          if len(_normalize(tag)) >= 2 and (_normalize(tag) in text or text in _normalize(tag)))
++        overlap = len(query_grams & {document[i:i + 2] for i in range(len(document) - 1)})
++        if not tag_matches and (overlap < 2 or overlap / max(1, len(query_grams)) < 0.3):
++            continue
++        score = tag_matches + overlap + (15 if text in document else 0)
++        ranked.append((score, context, entry_id, item, path))
++    ranked.sort(key=lambda row: (-row[0], row[2], row[1]["pack_id"]))
++    ids = build_id_map(entry_id for _, entry_id, _, _ in entries)
++    candidates = []
++    seen = set()
++    for _, context, entry_id, item, path in ranked:
++        if entry_id in seen:
++            continue
++        if file_sha256(path) != item.get("content_sha256"):
++            continue
++        seen.add(entry_id)
++        candidates.append({"id": ids[entry_id], "caption": item["caption"], "tags": item.get("tags", []),
++                           "visible_text": item.get("visible_text", ""), "_source_pack_id": context["pack_id"]})
++        if len(candidates) >= max(1, min(10, int(top_k))):
++            break
++    logger.info("[meme_manager] 本地描述/标签检索完成：%s 个候选，图包：%s", len(candidates), [c["pack_id"] for c in pack_contexts])
++    return {"ok": True, "candidates": candidates, "max_selectable": 1, "backend": "local_metadata",
++            "reason": "" if candidates else "已有描述和标签中没有找到匹配图片；不代表图库为空"}

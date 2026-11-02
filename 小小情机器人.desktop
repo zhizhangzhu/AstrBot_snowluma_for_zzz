@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=启动小小情 QQ 机器人
+Comment=启动 AstrBot 和 SnowLuma，并打开管理面板
+Exec=/home/yingjxu/workspace/astrbot-snowluma/start.sh --open
+Path=/home/yingjxu/workspace/astrbot-snowluma
+Icon=applications-internet
+Terminal=true
+Categories=Network;Utility;

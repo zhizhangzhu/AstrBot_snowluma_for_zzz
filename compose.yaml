@@ -1,0 +1,158 @@
+name: xiaoxiaoqing
+services:
+  astrbot:
+    image: ${ASTRBOT_RUNTIME_IMAGE:-${ASTRBOT_IMAGE:?Set ASTRBOT_IMAGE in .env}}
+    container_name: xiaoxiaoqing-astrbot
+    env_file:
+      - ./data/codex.env
+    restart: unless-stopped
+    init: true
+    environment:
+      TZ: Asia/Shanghai
+      PYTHONPATH: /opt/xiaoxiaoqing-network
+      XIAOXIAOQING_AIOHTTP_TRUST_ENV: "1"
+      XIAOXIAOQING_QZONE_SESSION_FILE: /run/qq-browser-session/qzone.json
+      XIAOXIAOQING_QZONE_UIN: "${QQ_ACCOUNT_ID:-2893214983}"
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${ASTRBOT_PORT:-6185}:6185"
+      - "${WEBUI_LAN_ADDRESS:?Set WEBUI_LAN_ADDRESS in .env}:${ASTRBOT_PORT:-6185}:6185"
+    expose:
+      - "6199"
+      - "6200"
+    volumes:
+      - ./data/astrbot:/AstrBot/data
+      - ./data/snowluma/browser-session:/run/qq-browser-session:ro
+      - ./bots/chuxiaoqing/data/snowluma/browser-session:/run/chuxiaoqing-browser-session:ro
+      - ./overrides/repository.py:/AstrBot/astrbot/core/repository.py:ro
+      - ./overrides/network:/opt/xiaoxiaoqing-network:ro
+    networks:
+      - bot
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  snowluma:
+    image: ${SNOWLUMA_RUNTIME_IMAGE:-${SNOWLUMA_IMAGE:?Set SNOWLUMA_IMAGE in .env}}
+    container_name: xiaoxiaoqing-snowluma
+    env_file:
+      - ./data/codex.env
+    restart: unless-stopped
+    shm_size: 1gb
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 1048576
+    cap_add:
+      - SYS_PTRACE
+    security_opt:
+      - seccomp=unconfined
+    environment:
+      TZ: Asia/Shanghai
+      VNC_PASSWD: ${VNC_PASSWD:?Set VNC_PASSWD in .env}
+      SNOWLUMA_UID: "1000"
+      SNOWLUMA_GID: "1000"
+      SNOWLUMA_ONEBOT_HOST: "0.0.0.0"
+      SNOWLUMA_WEBUI_HOST: "0.0.0.0"
+      SNOWLUMA_WEBUI_PORT: "5099"
+      SNOWLUMA_HOOK_AUTOLOAD: "1"
+      XIAOXIAOQING_QZONE_UIN: "${QQ_ACCOUNT_ID:-2893214983}"
+      SNOWLUMA_QQ_FLAGS: "--disable-gpu --disable-software-rasterizer --disable-gpu-compositing ${QQ_PROXY_FLAG:-}"
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${SNOWLUMA_PORT:-5099}:5099"
+      - "${WEBUI_LAN_ADDRESS:?Set WEBUI_LAN_ADDRESS in .env}:${SNOWLUMA_PORT:-5099}:5099"
+      - "${BIND_ADDRESS:-127.0.0.1}:${NOVNC_PORT:-6081}:6081"
+      - "${NOVNC_LAN_ADDRESS:?Set NOVNC_LAN_ADDRESS in .env}:${NOVNC_PORT:-6081}:6081"
+    expose:
+      - "3000"
+    volumes:
+      - ./data/snowluma:/app/data
+      - ./data/qq-config:/app/.config
+      - ./data/qq-share:/app/.local/share
+      - ./runtime/snowluma-native/index.mjs:/app/runtime/index.mjs:ro
+    depends_on:
+      - astrbot
+    networks:
+      - bot
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  codex-hub:
+    profiles: ["legacy-hapi"]
+    image: ${ASTRBOT_IMAGE:?Set ASTRBOT_IMAGE in .env}
+    container_name: xiaoxiaoqing-codex-hub
+    restart: "no"
+    init: true
+    user: "1000:1000"
+    working_dir: /hapi-home
+    entrypoint: ["/opt/hapi/hapi"]
+    command: ["hub", "--no-relay"]
+    environment:
+      TZ: Asia/Shanghai
+      HOME: /hapi-home
+      HAPI_HOME: /hapi-home
+      HAPI_LISTEN_HOST: "0.0.0.0"
+      HAPI_LISTEN_PORT: "3006"
+      CLI_API_TOKEN: ${HAPI_TOKEN:?Set HAPI_TOKEN in .env}
+      HAPI_ANDROID_PUSH: "off"
+      HAPI_IOS_PUSH: "off"
+      TELEGRAM_NOTIFICATION: "false"
+      SERVERCHAN_NOTIFICATION: "false"
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${HAPI_PORT:-3006}:3006"
+    volumes:
+      - ./runtime/hapi-native:/opt/hapi:ro
+      - ./data/hapi-hub:/hapi-home
+    networks:
+      - bot
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  codex-runner:
+    profiles: ["legacy-hapi"]
+    image: ${CODEX_RUNTIME_IMAGE:-xiaoxiaoqing-codex-runtime:4.29.1-0.30.7}
+    container_name: xiaoxiaoqing-codex-runner
+    restart: "no"
+    init: true
+    user: "1000:1000"
+    hostname: xiaoxiaoqing-codex
+    working_dir: /workspace
+    entrypoint: ["/opt/hapi/hapi"]
+    command: ["runner", "start-sync", "--workspace-root", "/workspace"]
+    env_file:
+      - ./data/codex.env
+    environment:
+      TZ: Asia/Shanghai
+      HOME: /hapi-home
+      HAPI_HOME: /hapi-home
+      HAPI_API_URL: http://codex-hub:3006
+      HAPI_RUNNER_SUPERVISED: "1"
+      CODEX_HOME: /codex-home
+      CLI_API_TOKEN: ${HAPI_TOKEN:?Set HAPI_TOKEN in .env}
+      PATH: /opt/hapi:/opt/codex:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    volumes:
+      - ./runtime/hapi-native:/opt/hapi:ro
+      - ./runtime/codex:/opt/codex:ro
+      - ./data/hapi-runner:/hapi-home
+      - ./data/codex-home:/codex-home
+      - ./data/codex-workspace:/workspace
+    depends_on:
+      - codex-hub
+    networks:
+      - bot
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+networks:
+  bot:
+    driver: bridge

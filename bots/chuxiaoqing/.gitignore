@@ -1,0 +1,9 @@
+.env
+credentials.local.json
+data/
+backups/
+runtime/*.json
+runtime/*.txt
+personas/
+__pycache__/
+*.pyc

@@ -1,0 +1,64 @@
+name: chuxiaoqing
+services:
+  astrbot:
+    profiles: ["standalone-legacy"]
+    image: ${ASTRBOT_IMAGE}
+    container_name: chuxiaoqing-astrbot
+    env_file: ./data/network.env
+    restart: "no"
+    init: true
+    environment:
+      TZ: Asia/Shanghai
+      PYTHONPATH: /opt/bot-network
+      XIAOXIAOQING_AIOHTTP_TRUST_ENV: "1"
+      XIAOXIAOQING_QZONE_SESSION_FILE: "${QZONE_SESSION_FILE:-}"
+      XIAOXIAOQING_QZONE_UIN: "${QQ_ACCOUNT_ID:-}"
+    ports:
+      - "${BIND_ADDRESS}:${ASTRBOT_PORT}:6185"
+      - "${LAN_ADDRESS}:${ASTRBOT_PORT}:6185"
+    expose: ["6199"]
+    volumes:
+      - ./data/astrbot:/AstrBot/data
+      - ./data/snowluma/browser-session:/run/qq-browser-session:ro
+      - ./runtime/repository.py:/AstrBot/astrbot/core/repository.py:ro
+      - ./runtime/network:/opt/bot-network:ro
+    networks: [bot, unified]
+    logging: {driver: json-file, options: {max-size: 10m, max-file: "3"}}
+  snowluma:
+    image: ${SNOWLUMA_IMAGE}
+    container_name: chuxiaoqing-snowluma
+    env_file: ./data/network.env
+    restart: unless-stopped
+    shm_size: 1gb
+    ulimits: {nofile: {soft: 65536, hard: 1048576}}
+    cap_add: [SYS_PTRACE]
+    security_opt: [seccomp=unconfined]
+    environment:
+      TZ: Asia/Shanghai
+      VNC_PASSWD: ${VNC_PASSWD}
+      SNOWLUMA_UID: "1000"
+      SNOWLUMA_GID: "1000"
+      SNOWLUMA_ONEBOT_HOST: "0.0.0.0"
+      SNOWLUMA_WEBUI_HOST: "0.0.0.0"
+      SNOWLUMA_WEBUI_PORT: "5099"
+      SNOWLUMA_HOOK_AUTOLOAD: "1"
+      SNOWLUMA_QQ_FLAGS: "--disable-gpu --disable-software-rasterizer --disable-gpu-compositing ${QQ_PROXY_FLAG}"
+    ports:
+      - "${BIND_ADDRESS}:${SNOWLUMA_PORT}:5099"
+      - "${LAN_ADDRESS}:${SNOWLUMA_PORT}:5099"
+      - "${BIND_ADDRESS}:${NOVNC_PORT}:6081"
+      - "${LAN_ADDRESS}:${NOVNC_PORT}:6081"
+    expose: ["3000"]
+    volumes:
+      - ./data/snowluma:/app/data
+      - ./data/qq-config:/app/.config
+      - ./data/qq-share:/app/.local/share
+      - ../../runtime/snowluma-native/index.mjs:/app/runtime/index.mjs:ro
+      - ./runtime/browser-session.conf:/etc/supervisor/conf.d/browser-session.conf:ro
+    networks: [bot, unified]
+    logging: {driver: json-file, options: {max-size: 10m, max-file: "3"}}
+networks:
+  bot: {driver: bridge}
+  unified:
+    external: true
+    name: xiaoxiaoqing_bot

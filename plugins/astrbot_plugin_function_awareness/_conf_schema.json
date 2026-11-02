@@ -1,0 +1,28 @@
+{
+  "enabled": {
+    "type": "bool",
+    "description": "启用功能自知",
+    "default": true
+  },
+  "inject_summary": {
+    "type": "bool",
+    "description": "向聊天模型注入当前能力摘要",
+    "default": true
+  },
+  "include_recent_actions": {
+    "type": "bool",
+    "description": "管理员私聊包含近期实际动作记录",
+    "default": true
+  },
+  "enable_contacts_query": {
+    "type": "bool",
+    "description": "允许管理员私聊只读查询QQ好友及已认识的人",
+    "default": true,
+    "hint": "只返回名单与来源，不读取或公开他人的聊天正文；群聊不开放。"
+  },
+  "max_prompt_chars": {
+    "type": "int",
+    "description": "能力摘要字数上限",
+    "default": 2800
+  }
+}
