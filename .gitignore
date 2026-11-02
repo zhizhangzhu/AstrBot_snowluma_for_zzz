@@ -1,0 +1,57 @@
+# Secrets and machine-specific configuration (including nested Bot instances).
+.env
+.env.*
+!.env.example
+credentials.local.json
+credentials*.local.*
+*.local.json
+*.local.yaml
+*.local.yml
+*.local.toml
+*.local.env
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Live state, accounts, chat history, backups and incident evidence.
+data/
+backups/
+logs/
+.runtime/
+runtime/
+personas/
+/deployment-state.json
+
+# Private media and generated archives.
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.7z
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.log
+
+# Dependencies, build output and editor files.
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+node_modules/
+build/
+dist/
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Local reports from applying the meme-manager patches.
+/overrides/meme-manager/*.json
