@@ -1,0 +1,36 @@
+"""The visible SSH agent confirms admission and exits without a blocked stdin thread."""
+import asyncio
+import json
+from pathlib import Path
+import sys
+
+import pytest
+
+SCRIPT=Path(__file__).resolve().parents[2]/'scripts/windows_maintenance.py'
+
+@pytest.mark.asyncio
+async def test_ssh_join_handshake_command_and_remote_disconnect(tmp_path):
+    broker=await asyncio.create_subprocess_exec(sys.executable,str(SCRIPT),'--root',str(tmp_path),'serve','--ttl','60',stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.PIPE)
+    agent=None
+    try:
+        await asyncio.wait_for(broker.stdout.readline(),3)
+        agent=await asyncio.create_subprocess_exec(sys.executable,str(SCRIPT),'--root',str(tmp_path),'join',stdin=asyncio.subprocess.PIPE,stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.PIPE)
+        agent.stdin.write((json.dumps({'protocol':2,'host':'test','user':'tester'})+'\n').encode());await agent.stdin.drain()
+        assert json.loads(await asyncio.wait_for(agent.stdout.readline(),3))=={'ready':True}
+        reader,writer=await asyncio.open_unix_connection(str(tmp_path/'control.sock'))
+        writer.write(json.dumps({'script':'Write-Output "test"','timeout':2}).encode()+b'\n');await writer.drain()
+        command=json.loads(await asyncio.wait_for(agent.stdout.readline(),3))
+        assert command['script']=='Write-Output "test"'
+        response={'id':command['id'],'status':'completed','output':'test'}
+        agent.stdin.write(json.dumps(response).encode()+b'\n');await agent.stdin.drain()
+        assert json.loads(await asyncio.wait_for(reader.readline(),3))==response
+        writer.close();await writer.wait_closed()
+        # Broker closure previously left the SSH process waiting for a stdin thread for 300s.
+        broker.terminate();await asyncio.wait_for(broker.wait(),3)
+        await asyncio.wait_for(agent.wait(),3)
+        assert agent.returncode==0
+        assert b'executor' not in await agent.stderr.read()
+    finally:
+        for process in (agent,broker):
+            if process and process.returncode is None:
+                process.terminate();await process.wait()

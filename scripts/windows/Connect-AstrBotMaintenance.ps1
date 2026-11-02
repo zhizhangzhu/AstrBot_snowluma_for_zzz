@@ -7,23 +7,26 @@ $ErrorActionPreference = 'Stop'
 if ($SshTarget -notmatch '^[a-zA-Z0-9_.@:-]+$' -or $Project -notmatch '^/[a-zA-Z0-9_./-]+$') { throw 'Invalid SSH target or project directory.' }
 Write-Host 'Temporary AstrBot maintenance. Commands run as your current Windows user.' -ForegroundColor Cyan
 Write-Host 'Keep this window visible. Close it or press Ctrl+C to end the session.'
-$credentialJson = & ssh -T $SshTarget "cat $Project/.runtime/windows-maintenance/session.local.json"
-if ($LASTEXITCODE -ne 0) { throw 'Unable to read the temporary credential through SSH.' }
-$credential = ($credentialJson -join "`n") | ConvertFrom-Json
-if ([DateTimeOffset]::UtcNow.ToUnixTimeSeconds() -ge $credential.expires_at) { throw 'The maintenance session expired.' }
 $info = New-Object System.Diagnostics.ProcessStartInfo
 $info.FileName = 'ssh.exe'
-$info.Arguments = "-T -o ServerAliveInterval=15 -o ServerAliveCountMax=3 $SshTarget /usr/bin/python3 $Project/scripts/windows_maintenance.py join"
+$info.Arguments = "-T -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=15 -o ServerAliveCountMax=3 $SshTarget /usr/bin/python3 $Project/scripts/windows_maintenance.py join"
 $info.UseShellExecute = $false
 $info.RedirectStandardInput = $true
 $info.RedirectStandardOutput = $true
+$info.StandardOutputEncoding = New-Object System.Text.UTF8Encoding($false)
 $info.CreateNoWindow = $false
 $process = New-Object System.Diagnostics.Process
 $process.StartInfo = $info
 try {
   if (-not $process.Start()) { throw 'SSH did not start.' }
-  $hello = @{ token=$credential.token; host=$env:COMPUTERNAME; user=$env:USERNAME; os=[Environment]::OSVersion.VersionString; powershell=$PSVersionTable.PSVersion.ToString() }
+  $hello = @{ protocol=2; host=$env:COMPUTERNAME; user=$env:USERNAME; os=[Environment]::OSVersion.VersionString; powershell=$PSVersionTable.PSVersion.ToString() }
   $process.StandardInput.WriteLine(($hello | ConvertTo-Json -Compress)); $process.StandardInput.Flush()
+  Write-Host 'Waiting for the server to confirm the SSH maintenance connection...'
+  $ready = $process.StandardOutput.ReadLineAsync()
+  if (-not $ready.Wait(30000)) { throw 'The server did not confirm the connection within 30 seconds.' }
+  if ([string]::IsNullOrWhiteSpace($ready.Result)) { throw 'SSH ended before the maintenance connection was confirmed.' }
+  $confirmation = $ready.Result | ConvertFrom-Json
+  if (-not $confirmation.ready) { throw 'The server rejected the maintenance connection.' }
   Write-Host 'Connected. Waiting for maintenance commands.' -ForegroundColor Green
   while (-not $process.HasExited) {
     $line = $process.StandardOutput.ReadLine()

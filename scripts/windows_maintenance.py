@@ -43,6 +43,8 @@ class Broker:
             self.peer=writer
             self.info={key:str(hello.get(key,''))[:160] for key in ('host','user','os','powershell')}
             self.info['connected_at']=time.time()
+            if hello.get('protocol') == 2:
+                await send(writer,{'ready':True})
             while True:
                 result=await read(reader)
                 future=self.pending.get(result.get('id'))
@@ -103,20 +105,32 @@ async def serve(folder,ttl):
 
 async def join(folder):
     reader,writer=await asyncio.open_unix_connection(str(folder/'agent.sock'),limit=LIMIT)
-    async def incoming():
-        while True:
-            line=await asyncio.to_thread(sys.stdin.buffer.readline,LIMIT)
-            if not line:return
-            writer.write(line);await writer.drain()
-    async def outgoing():
-        while True:
-            line=await reader.readline()
-            if not line:return
-            sys.stdout.buffer.write(line);sys.stdout.buffer.flush()
-    tasks=[asyncio.create_task(incoming()),asyncio.create_task(outgoing())]
-    try:await asyncio.wait(tasks,return_when=asyncio.FIRST_COMPLETED)
+    incoming_reader=asyncio.StreamReader(limit=LIMIT)
+    protocol=asyncio.StreamReaderProtocol(incoming_reader)
+    transport,_=await asyncio.get_running_loop().connect_read_pipe(lambda:protocol,sys.stdin.buffer)
+    tasks=[]
+    try:
+        hello=await asyncio.wait_for(read(incoming_reader),30)
+        if hello.get('protocol')==2:
+            credential=json.loads((folder/'session.local.json').read_text())
+            hello['token']=credential['token']
+        await send(writer,hello)
+        async def incoming():
+            while True:
+                line=await incoming_reader.readline()
+                if not line:return
+                writer.write(line);await writer.drain()
+        async def outgoing():
+            while True:
+                line=await reader.readline()
+                if not line:return
+                sys.stdout.buffer.write(line);sys.stdout.buffer.flush()
+        tasks=[asyncio.create_task(incoming()),asyncio.create_task(outgoing())]
+        await asyncio.wait(tasks,return_when=asyncio.FIRST_COMPLETED)
     finally:
         for task in tasks:task.cancel()
+        if tasks:await asyncio.gather(*tasks,return_exceptions=True)
+        transport.close()
         writer.close();await writer.wait_closed()
 
 async def request(folder,action,script_file,timeout):

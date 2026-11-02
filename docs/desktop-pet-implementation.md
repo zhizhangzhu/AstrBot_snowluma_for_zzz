@@ -140,3 +140,9 @@ pnpm exec tsx scripts/pack.ts
 隐藏后的窗口仍可能维持连接。旧的再次唤起判断只检查连接，因而漏掉“连接正常但窗口隐藏”的状态。原生 `app/main.cjs` 的 `ensurePet` 同时检查 `connected` 与 `onDesktop`；托盘显示使用 `showPet` 的关闭/重新打开窗口路径。Windows CI 使用同一公开面板路径验证隐藏、关闭、重新打开后 `connected` 和 `onDesktop` 均恢复。实际托盘点击和多显示器位置还需在用户电脑核验。
 
 当前生产配对文件已在服务器的私有 `.runtime/` 中生成，绑定小小情与用户 1005145948，未发送到未核验的设备。配对凭据、私有 CA、数据库、用户记录和截图均未提交。父仓库 PR 为 https://github.com/zhizhangzhu/AstrBot_snowluma_for_zzz/pull/1 。
+
+### 临时维护连接的确认与退出
+
+`scripts/windows_maintenance.py` 与 `scripts/windows/Connect-AstrBotMaintenance.ps1` 使用单次 SSH 会话。Linux 侧在已认证 SSH 用户的权限内读取本地临时凭据，Windows 不再额外执行一次捕获凭据输出的 SSH 命令。PowerShell 在收到服务端握手后才显示 Connected，并为握手设置超时和 UTF-8 编码。
+
+旧实现用线程阻塞读取 stdin；远端关闭后取消异步任务不能结束该线程，Python 最多等待 300 秒并输出 executor 警告。现改为可关闭的异步管道。`tests/desktop_pet/test_windows_maintenance.py` 使用真实子进程和本地 Unix socket 验证握手、命令往返与服务端关闭后及时退出。桌宠服务端测试目前共 36 项通过。
