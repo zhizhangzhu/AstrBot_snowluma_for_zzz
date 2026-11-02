@@ -27,7 +27,8 @@
       "root": "data/astrbot/plugins/meme_manager",
       "patch": "meme-confirmation.patch",
       "files": {
-        "backend/character_confirmation.py": "47d5c04c7482e560753bcdff2cc66ec2c6e4f78f70b7407b2e8d1b6c3db6cc39"
+        "backend/character_confirmation.py": "47d5c04c7482e560753bcdff2cc66ec2c6e4f78f70b7407b2e8d1b6c3db6cc39",
+        "mixins/event_handlers.py": "42f5de09773c641cf18db3d8b9c568f11a1c6ee78ac224f91e759dd97a526bf0"
       }
     }
   },

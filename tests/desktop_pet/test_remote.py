@@ -3,7 +3,12 @@ import json
 from types import SimpleNamespace
 import pytest
 from plugins.astrbot_plugin_desktop_pet.remote import RemoteMixin
+from plugins.astrbot_plugin_desktop_pet.remote import display_text
 from plugins.astrbot_plugin_desktop_pet.protocol import Binding
+
+def test_history_removes_only_known_trailing_framework_metadata():
+    assert display_text('Hello<system_reminder>User ID: 123, Nickname: Person\nCurrent datetime: 2026-11-02 15:00 (CST)</system_reminder>')=='Hello'
+    assert display_text('Quote <system_reminder>ordinary user text</system_reminder>')=='Quote <system_reminder>ordinary user text</system_reminder>'
 
 @pytest.mark.asyncio
 async def test_history_uses_only_bound_origin_and_filters_tool_internals(monkeypatch):
@@ -73,7 +78,9 @@ async def test_authorized_binding_accepts_framework_persona_results_without_cros
     source=ast.parse((Path(__file__).parents[2]/'plugins/astrbot_plugin_desktop_pet/main.py').read_text())
     cls=next(n for n in source.body if isinstance(n,ast.ClassDef) and n.name=='DesktopPetPlugin')
     method=next(n for n in cls.body if isinstance(n,ast.AsyncFunctionDef) and n.name=='authorized_binding')
-    namespace={};exec(compile(ast.Module(body=[method],type_ignores=[]),'<actual desktop authorization>','exec'),namespace)
+    receiver=next(n for n in cls.body if isinstance(n,ast.AsyncFunctionDef) and n.name=='receive')
+    import time
+    namespace={'time':time,'SimpleNamespace':SimpleNamespace,'DesktopEvent':lambda platform,binding,envelope:SimpleNamespace(binding=binding,envelope=envelope),'installed':lambda *a:None};exec(compile(ast.Module(body=[method,receiver],type_ignores=[]),'<actual desktop admission>','exec'),namespace)
     bindings=[Binding('a','persona-a','bot-a','same-user','adapter-a'),Binding('b','persona-b','bot-b','same-user','adapter-b')]
     binding=next(b for b in bindings if b.persona_id==persona)
     class Manager:
@@ -87,5 +94,35 @@ async def test_authorized_binding_accepts_framework_persona_results_without_cros
     personas=Personas()
     owner=SimpleNamespace(hub=SimpleNamespace(stopping=False),store=SimpleNamespace(bindings=lambda:bindings),context=SimpleNamespace(conversation_manager=Manager(),persona_manager=personas,get_config=lambda **k:{}))
     assert await namespace['authorized_binding'](owner,SimpleNamespace(unified_msg_origin=binding.conversation_origin))==binding
+    from types import MethodType
+    owner.authorized_binding=MethodType(namespace['authorized_binding'],owner)
+    committed=[];owner.platform=SimpleNamespace(commit_event=committed.append)
+    envelope={'payload':{'world':'desktop-pet','text':'normal text','event_type':'desktop-pet.message'}}
+    await namespace['receive'](owner,binding,envelope)
+    assert len(committed)==1 and committed[0].binding==binding
+    observations=[];owner.store.claim=lambda *args:observations.append(args)
+    figure={'id':'figure-change','payload':{'world':'desktop-pet','text':'new clothes','event_type':'desktop-pet.figure','trigger':'debounce'}}
+    assert await namespace['receive'](owner,binding,figure)=='observed'
+    assert len(committed)==1 and len(observations)==1
     personas.selected='another-persona'
     assert await namespace['authorized_binding'](owner,SimpleNamespace(unified_msg_origin=binding.conversation_origin)) is None
+    with pytest.raises(ValueError,match='paired_persona'):
+        await namespace['receive'](owner,binding,envelope)
+    assert len(committed)==1
+
+@pytest.mark.asyncio
+async def test_shared_history_projects_only_confirmed_desktop_speech(monkeypatch):
+    binding=Binding('d','persona','bot','user','qq')
+    def output(status,text):return json.dumps({'status':status,'outputs':[{'text':text,'meta':{'kind':'say'}},{'text':'internal action detail','meta':{'kind':'act'}}]})
+    rows=[{'role':'assistant','tool_calls':[{'id':'desktop','function':{'name':'desktop_pet_call'}},{'id':'other','function':{'name':'other_tool'}}]},
+          {'role':'tool','tool_call_id':'desktop','content':output('completed','A displayed question.')},
+          {'role':'tool','tool_call_id':'desktop','content':output('submitted','Unconfirmed speech.')},
+          {'role':'tool','tool_call_id':'other','content':output('completed','Private internal tool output.')}]
+    class Conversations:
+        async def get_curr_conversation_id(self,origin):return 'conversation'
+        async def get_conversation(self,origin,cid):return SimpleNamespace(history=json.dumps(rows))
+    import plugins.astrbot_plugin_desktop_pet.remote as module
+    monkeypatch.setattr(module,'installed',lambda *a:None)
+    remote=RemoteMixin();remote.context=SimpleNamespace(conversation_manager=Conversations())
+    result=await remote.read_history(binding,{'kind':'history'})
+    assert result['items']==[{'index':1,'role':'assistant','text':'A displayed question.','terminal':'desktop'}]

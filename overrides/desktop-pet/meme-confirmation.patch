@@ -21,3 +21,14 @@
              async with self._lock:
                  current = self._state["requests"][snapshot["id"]]
                  if current.get("question_state") == "sending":
+--- a/mixins/event_handlers.py
++++ b/mixins/event_handlers.py
+@@ -1833,7 +1833,7 @@
+         platform_name = event.get_platform_name()
+         # Preserve the originating OneBot event so companion send tracking can
+         # retain successfully delivered images for quoted/follow-up vision.
+-        if platform_name in {"gewechat", "webchat", "aiocqhttp"}:
++        if platform_name in {"gewechat", "webchat", "aiocqhttp", "desktop_pet"}:
+             result = await event.send(MessageChain([image]))
+             if result is not False and platform_name == "aiocqhttp":
+                 try:

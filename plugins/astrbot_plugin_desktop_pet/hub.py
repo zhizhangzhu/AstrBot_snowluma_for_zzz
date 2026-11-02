@@ -155,7 +155,8 @@ class Hub:
             if fresh:
                 try:
                     disposition=await self.receive(peer.binding, message)
-                except Exception:
+                except Exception as error:
+                    logging.getLogger(__name__).warning("Desktop input rejected (%s)",type(error).__name__,exc_info=True)
                     self.store.update(peer.binding.device_id, mid, "failed")
                     await peer.socket.send_json(frame("ack", mid, {"status": "failed"}))
                     return

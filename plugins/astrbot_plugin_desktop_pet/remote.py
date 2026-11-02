@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import importlib
 import json
+import re
 from types import SimpleNamespace
 from .integrations import installed, record_outputs
 from .media import unpack, IMAGE_MIMES
@@ -13,6 +14,13 @@ def text_content(value):
     if isinstance(value,list):
         return ''.join(str(item.get('text','')) for item in value if isinstance(item,dict) and item.get('type') in {'text','input_text','output_text'})
     return ''
+
+
+def display_text(value):
+    """Remove only AstrBot's known trailing user metadata, without changing storage."""
+    return re.sub(r'<system_reminder>\s*User ID:\s*\d+,\s*Nickname:.*?'
+                  r'Current datetime:.*?</system_reminder>\s*$', '', value,
+                  flags=re.DOTALL).rstrip()
 
 class RemoteMixin:
     async def remote_request(self,binding,kind,payload):
@@ -51,16 +59,27 @@ class RemoteMixin:
         limit=max(1,min(50,int(payload.get('limit',50))))
         before=payload.get('before')
         before=min(len(history),max(0,int(before))) if isinstance(before,(int,float)) else len(history)
+        desktop_calls={str(call.get('id')) for row in history if isinstance(row,dict) and row.get('role')=='assistant' for call in (row.get('tool_calls') or []) if isinstance(call,dict) and (call.get('function') or {}).get('name')=='desktop_pet_call'}
         items=[];index=before
         owner=installed(self.context,'astrbot_plugin_private_companion')
         while index>0 and len(items)<limit:
             index-=1;row=history[index]
-            if not isinstance(row,dict) or row.get('role') not in {'user','assistant'}:continue
+            if not isinstance(row,dict):continue
+            role=row.get('role');terminal='shared'
             text=text_content(row.get('content'))
+            if role=='tool' and str(row.get('tool_call_id')) in desktop_calls:
+                try:receipt=json.loads(text)
+                except (ValueError,TypeError):continue
+                if not isinstance(receipt,dict) or receipt.get('status')!='completed':continue
+                text='\n'.join(str(output.get('text','')) for output in receipt.get('outputs',[]) if isinstance(output,dict) and (output.get('meta') or {}).get('kind') in {'say','ask'})
+                role='assistant';terminal='desktop'
+            elif role not in {'user','assistant'}:continue
             if not text.strip():continue
             synthetic=getattr(owner,'_proactive_archive_context_text',None)
             if row['role']=='user' and callable(synthetic) and synthetic(text):continue
-            items.append({'index':index,'role':row['role'],'text':text[:16000],'terminal':'shared'})
+            if row['role']=='user':text=display_text(text)
+            if not text.strip():continue
+            items.append({'index':index,'role':role,'text':text[:16000],'terminal':terminal})
         return {'items':list(reversed(items)),'more':index>0,'before':index}
 
     async def world_cognition(self,binding,payload):
