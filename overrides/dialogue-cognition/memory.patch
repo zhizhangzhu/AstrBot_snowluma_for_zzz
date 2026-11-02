@@ -1,0 +1,21 @@
+--- a/core/profile_quality.py
++++ b/core/profile_quality.py
+@@ -117,7 +117,7 @@
+     re.compile(pattern)
+     for pattern in (
+         r"^(?:我|咱|俺)(?:的)?职业(?:是|为|：|:)\s*(?P<value>.+)$",
+-        r"^(?:我|咱|俺)(?:从事|担任|当)(?:一名|一个)?\s*(?P<value>.+)$",
++        r"^(?:我|咱|俺)(?:从事|担任|当(?!时|初|天|年|晚|前|然|中|作|成|做))(?:(?:一名|一个))?\s*(?P<value>.+)$",
+         r"^(?:我|咱|俺)是(?:做|干)(?P<value>.+)$",
+         r"^(?:我|咱|俺)是(?:一名|一个)\s*(?P<value>.+)$",
+     )
+@@ -464,7 +464,8 @@
+ 
+     for pattern in _OCCUPATION_PATTERNS:
+         value = _match_value(pattern, clause, strip_terminal_de=True)
+-        if _valid_general_value(value) and not _TEMPORARY_RE.search(clause):
++        occupation_noise = re.search(r"^(?:时|初|然后|当时)|告白|选项|给了|说了|喜欢|讨厌|的人$", value or "")
++        if _valid_general_value(value) and len(value)<=40 and not occupation_noise and not _TEMPORARY_RE.search(clause):
+             results.append(
+                 _candidate(
+                     dimension="occupation",

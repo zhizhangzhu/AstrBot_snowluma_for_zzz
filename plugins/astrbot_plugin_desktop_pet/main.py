@@ -25,9 +25,11 @@ from .schedule import ScheduleMixin
 from .remote import RemoteMixin
 from .media import unpack
 from .presentation import EMBODIMENT, snapshot_for
+from .interactions import InteractionBuffer
+from .avatar import AvatarCache
 
 
-@register("astrbot_plugin_desktop_pet", "zhizhangzhu", "Coopanion 桌宠终端：共用人格、记忆和主动决策", "0.2.2")
+@register("astrbot_plugin_desktop_pet", "zhizhangzhu", "Coopanion 桌宠终端：共用人格、记忆和主动决策", "0.2.3")
 class DesktopPetPlugin(RemoteMixin, ScheduleMixin, Star):
     def __init__(self, context: Context, config: dict):
         super().__init__(context)
@@ -37,6 +39,8 @@ class DesktopPetPlugin(RemoteMixin, ScheduleMixin, Star):
         self.hub = Hub(self.store, self.receive)
         self.hub.remote = self.remote_request
         self.platform = DesktopPlatform(context, self.hub)
+        self.interactions = InteractionBuffer(self.receive, self.settle_interaction)
+        self.avatars = AvatarCache(self.root / 'qq_avatars')
         self.runner = None
         self.startup = None
 
@@ -188,12 +192,25 @@ class DesktopPetPlugin(RemoteMixin, ScheduleMixin, Star):
                 except Exception:self.store.update(binding.device_id,envelope['id'],'failed')
 
 
-    async def receive(self, binding, envelope):
+    async def settle_interaction(self,binding,envelope,status):
+        if status=='queued':
+            self.store.update(binding.device_id,envelope['id'],status,envelope['payload'])
+            return
+        self.store.update(binding.device_id,envelope['id'],status)
+        await self.hub.notify_terminal(binding,'lifecycle',{'kind':status,'cursor':envelope['payload'].get('cursor')})
+
+    async def receive(self, binding, envelope, *, batched=False):
         # Admission uses the same checked binding for normal input, queries and tools.
         active = await self.authorized_binding(SimpleNamespace(unified_msg_origin=binding.conversation_origin))
         if active is None or any(getattr(active, key) != getattr(binding, key) for key in binding.__dataclass_fields__):
             raise ValueError("paired_persona_no_longer_matches_qq")
         event = DesktopEvent(self.platform, binding, envelope)
+        buffer = getattr(self,'interactions',None)
+        if buffer and envelope['payload'].get('event_type')=='desktop-pet.figure':
+            buffer.figure(binding,envelope)
+        if buffer and not batched and envelope['payload'].get('event_type')=='desktop-pet.touch' and (envelope['payload'].get('trigger')!='piggyback' or binding.device_id in buffer.pending):
+            buffer.offer(binding,envelope)
+            return 'buffered'
         if envelope["payload"].get("event_type") == "desktop-pet.figure" or envelope["payload"].get("trigger") == "piggyback" or (envelope["payload"].get("origin")=="internal" and envelope["payload"].get("event_type")!="coopanion.alarm"):
             self.store.claim(binding.device_id, "observation:" + envelope["id"], "observation", {
                 "world": envelope["payload"]["world"], "type": envelope["payload"].get("event_type", ""),
@@ -351,6 +368,7 @@ class DesktopPetPlugin(RemoteMixin, ScheduleMixin, Star):
         return json.dumps(result, ensure_ascii=False)
 
     async def terminate(self):
+        await self.interactions.close()
         if self.startup and not self.startup.done():
             self.startup.cancel()
             await asyncio.gather(self.startup, return_exceptions=True)

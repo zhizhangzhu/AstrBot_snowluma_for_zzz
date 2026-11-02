@@ -40,6 +40,8 @@ class RemoteMixin:
                     identity={'persona_id':binding.persona_id,'bot_name':binding.persona_id,
                               'user_id':binding.user_id,'user_name':str(user.get('nickname') or user.get('last_display_name') or binding.user_id),
                               'timezone':str(cfg.get('timezone') or 'Asia/Shanghai'),'model_id':str(model or '')}
+                    avatars=getattr(self,'avatars',None)
+                    if avatars is not None:identity['avatar']=await avatars.get(binding.bot_id)
                     if payload.get('kind')=='identity':return identity
                     text=await owner._resolve_proactive_persona_prompt(user,umo=binding.conversation_origin)
                     return {**identity,'text':text}

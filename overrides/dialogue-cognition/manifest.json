@@ -1,0 +1,102 @@
+{
+  "format": 1,
+  "requires": "desktop-pet integration through 0.2.2 applied first",
+  "groups": {
+    "companion": {
+      "root": "data/astrbot/plugins/astrbot_plugin_private_companion",
+      "patch": "companion.patch",
+      "files": {
+        "user_memory.py": {
+          "before": "18df3d8bcac7a213be97dfcc1a228cafc6a3ee46d9d8d75edac7224349db0203",
+          "after": "dca91bf34e9f31f6b89e00ce28926561759226945ef45ab79d1dbd3ade1dc3b4"
+        },
+        "companion_growth.py": {
+          "before": "1c934611bf2370b5f28727be272c85d7bede73a133ae9519a86bc2f89ff76759",
+          "after": "c4b4a65dfde6c5d9344b0393b9198ecf5c8243c1987791f82ffb8d351c813633"
+        },
+        "companion_continuity.py": {
+          "before": "c4986be396d5d89f6c601cf76874c384786eafd562e29dafd4297781da735ce8",
+          "after": "d14fb342c03ac0fb71bc0335ef81f68114eadbb130cdf730b122aaa23184a633"
+        },
+        "page_api.py": {
+          "before": "c4882fb5e3bd8ca20df5d949699d11b8a99af661a74dc675091698455b63b6fc",
+          "after": "97ce8a58e62dd1db49ef13248ee9369a6e8f0cf650cce4365002a7408bfb3d0d"
+        },
+        "qq_history_bridge.py": {
+          "before": "c61c0e57f8482db22cbba2d151fe870668e1fc99e2b691b0ec4ea2c49c1e5168",
+          "after": "a6213d0afd0647504eb2b580a308d302c9a7e212c47b89e920b9c1893ffc66dc"
+        },
+        "final_response_persistence.py": {
+          "before": "778e7b7fa6722a4b2a1cd3f33032aa3adffd71e22ed6fb4f15106922e5a1556b",
+          "after": "217fde0831990c1ecba83008123314ab997eb0d73175448183c26a8df4e68a8b"
+        },
+        "sent_image_context.py": {
+          "before": "cfa4563b785ba8c73d81783b8d94c9d810d91d7d0c23a7897805632668596b3c",
+          "after": "a4cdc843fde8f2eba51118a623d0bf6804cdaa5d5c4b1fe6c58f421e2b2fb4bd"
+        },
+        "pages/companion-panel/app.js": {
+          "before": "8cca6bef1317cd89ab2a62c7cce0d2c9c3bdec9877318705b27bd23642fa85c9",
+          "after": "e83e50275c704b0f3021418f37f9735ba1e4ab32b83343dc563a98e50eac00fd"
+        },
+        "pages/陪伴面板/app.js": {
+          "before": "8cca6bef1317cd89ab2a62c7cce0d2c9c3bdec9877318705b27bd23642fa85c9",
+          "after": "e83e50275c704b0f3021418f37f9735ba1e4ab32b83343dc563a98e50eac00fd"
+        },
+        "tests/test_owner_exclusive_relationship_prompt.py": {
+          "before": "aba79a55f014afdb2fd7c4fb3a1884d0f2d928a927f498d579ffc55649118afc",
+          "after": "b806429da24b685ce5e206666f9459584cc6233c097069fe5a90881b2e9dc89d"
+        },
+        "tests/test_qq_history_bridge.py": {
+          "before": "e98725e1be4f4615c99ea99ed1ffccecdcb6c4bd51fd176bd329eac783510ca0",
+          "after": "8cbbb170204ff7926478fac0593518b175550801966f560e1b669569aced212b"
+        },
+        "tests/test_companion_continuity.py": {
+          "before": "808dee7bc59f623e0f289afa76fdec8713d531b8f8f2dc75b1cc5691535a0c82",
+          "after": "3a9e5c53768253d464fd5f14a195e157e044a53945b584a9f50fc316913c3caf"
+        },
+        "learning_consistency.py": {
+          "before": null,
+          "after": "3ce0e8713a51892a4ff98a0dc18998a3c79c4ef8d59983e91640f5847a901406",
+          "source": "learning_consistency.py"
+        }
+      }
+    },
+    "memory": {
+      "root": "data/astrbot/plugins/astrbot_plugin_memory_companion",
+      "patch": "memory.patch",
+      "files": {
+        "core/profile_quality.py": {
+          "before": "57d5de18343b960d396e7bbd9ec32f8088304ebfdf570d7ed0969dfeb27d9999",
+          "after": "d1ac518d0597d62184c9334ae544b7f0d16f1dd588187509a3ad9b9b971eb13b"
+        }
+      }
+    },
+    "meme": {
+      "root": "data/astrbot/plugins/meme_manager",
+      "patch": "meme.patch",
+      "files": {
+        "backend/media_receipts.py": {
+          "before": "0e9c8e96c0a7329232d8b4a90921a469702df3d33cee65a75f93f8292f1a1bf5",
+          "after": "24a083babe5834a38ea346b56ef001e5c5c95acb24a3b996e35cccefee58dd55"
+        },
+        "mixins/event_handlers.py": {
+          "before": "aa54af000b2ea6ce8500a6f62ee8559b5d24eab420bd7fa679b9e43b25f9626c",
+          "after": "0d766d40906a3e0134f212edb156d2c19350b2bb90f586e2bc9c0fb9c93839d7"
+        },
+        "main.py": {
+          "before": "d3b070222b812fe7491c061c31c51458d4edc9efaa50b6983dedfef6d77d5e12",
+          "after": "60af321015e5123c304857aba88e4491a384bf0994eb7ef1790e997e6fdce616"
+        },
+        "backend/semantic/metadata_search.py": {
+          "before": "2951d60095df5cc537ec910754db68ebab3be345d5b865bef3fa12da0edb8880",
+          "after": "34f15614b9790cb2fb7838bbc929a899a5fc568c90a01fa1eb5cd964953946b1"
+        },
+        "backend/image_cognition.py": {
+          "before": null,
+          "after": "f41ce13c7ccd4e426817981b4f3affd1cf3796e6837788bbbd8c221095a4f122",
+          "source": "image_cognition.py"
+        }
+      }
+    }
+  }
+}

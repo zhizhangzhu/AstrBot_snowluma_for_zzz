@@ -1,6 +1,6 @@
 name: astrbot_plugin_desktop_pet
 display_name: 桌宠终端
 desc: Coopanion Windows 终端，共用 AstrBot 人格、近期对话与记忆。
-version: v0.2.2
+version: v0.2.3
 author: zhizhangzhu
 repo: https://github.com/zhizhangzhu/AstrBot_snowluma_for_zzz

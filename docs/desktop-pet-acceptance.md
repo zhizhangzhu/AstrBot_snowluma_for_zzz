@@ -2,6 +2,23 @@
 
 核对日期：2026-11-02。需求基线：[接入计划书](desktop-pet-integration-plan.md)，实施和恢复步骤：[实现说明](desktop-pet-implementation.md)。本表记录实际证据，不把代码实现、模拟测试与实机体验混为一谈。
 
+## 0.3.2 增量交付
+
+客户端源码 `f23ec8ae06b1082c81b31495ad1bd851c397a5c0`；[Windows 构建与原生安装验收](https://github.com/zhizhangzhu/Coopanion/actions/runs/41423840198)和[普通 CI](https://github.com/zhizhangzhu/Coopanion/actions/runs/41423840194)均通过。客户端 512 项、World 204 项通过，3 项跳过，三项类型检查通过。Linux 服务端已更新至 0.2.3。用户 Windows 的最后确认安装版本仍为 0.3.1；升级需要恢复临时维护连接或手动安装，以下新增客户端能力尚不算用户电脑实测。
+
+安装包：[Windows x64 构建产物](https://github.com/zhizhangzhu/Coopanion/actions/runs/41423840198/artifacts/13130628605)，内含 `AstrBot-Desktop-Pet-Setup-0.3.2.exe`。GitHub 给出的 ZIP SHA-256 为 `cbe952ee50e7bab162ce2a7df6844f3390d5dc074acdd7c5ecc63ce85006f714`。
+
+| 功能 / 修复 | 当前证据 |
+| --- | --- |
+| 书名号内错误分段 | 已修复未知动作仍创建气泡边界的问题；新增标题、引号、括号、嵌套与正常动作边界测试。 |
+| QQ 头像同步 | 已按验证后的 Bot 账号获取并缓存头像，支持版本刷新与离线保留；两个正式 QQ 头像读取成功，Windows 原生头像展示自动验收通过。 |
+| 接收与排队提示 | 区分客户端待发、服务器已接收和实际模型处理，取消无依据的“完成当前步骤后查看”；投递回执检查通过。 |
+| 身体气泡中的表情图 | PNG 和 GIF 原件进入身体气泡；加载成功才返回展示回执。真实 Windows 安装包测试通过。 |
+| 连续身体互动 | 服务端合并相邻触摸并附最近换装；原事件编号和来源保留，不伪装 QQ 戳一戳。 |
+| 图片认知、关系与话头 | 服务端已部署；独立人格证据、语义修订、错误画像抑制、去重和归档检查通过，详见[修复记录](dialogue-cognition-20261102.md)。 |
+
+下文保留 0.3.1 已完成的用户电脑验收证据。0.3.2 继续使用原有加密配对，无需复制 QQ 登录态或重新建立模型授权。
+
 ## 交付版本
 
 - Windows 客户端 **0.3.1**，源码 `Coopanion@1c9982c896344a6cca9c1bbf097b8dc185eaf126`；原版 Cortico 子模块未修改。
