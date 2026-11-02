@@ -21,7 +21,7 @@ async def test_ssh_join_handshake_command_and_remote_disconnect(tmp_path):
         writer.write(json.dumps({'script':'Write-Output "test"','timeout':2}).encode()+b'\n');await writer.drain()
         command=json.loads(await asyncio.wait_for(agent.stdout.readline(),3))
         assert command['script']=='Write-Output "test"'
-        response={'id':command['id'],'status':'completed','output':'test'}
+        response={'id':command['id'],'status':'completed','output':'你好，桌宠'}
         agent.stdin.write(json.dumps(response).encode()+b'\n');await agent.stdin.drain()
         assert json.loads(await asyncio.wait_for(reader.readline(),3))==response
         writer.close();await writer.wait_closed()

@@ -4,6 +4,10 @@ param(
   [string]$Project = '/home/yingjxu/workspace/astrbot-snowluma'
 )
 $ErrorActionPreference = 'Stop'
+function ConvertTo-MaintenanceJson($Value) {
+  $json = ConvertTo-Json -InputObject $Value -Compress -Depth 8
+  return [regex]::Replace($json, '[^\u0000-\u007f]', { param($match) '\u{0:x4}' -f [int][char]$match.Value })
+}
 if ($SshTarget -notmatch '^[a-zA-Z0-9_.@:-]+$' -or $Project -notmatch '^/[a-zA-Z0-9_./-]+$') { throw 'Invalid SSH target or project directory.' }
 Write-Host 'Temporary AstrBot maintenance. Commands run as your current Windows user.' -ForegroundColor Cyan
 Write-Host 'Keep this window visible. Close it or press Ctrl+C to end the session.'
@@ -20,7 +24,7 @@ $process.StartInfo = $info
 try {
   if (-not $process.Start()) { throw 'SSH did not start.' }
   $hello = @{ protocol=2; host=$env:COMPUTERNAME; user=$env:USERNAME; os=[Environment]::OSVersion.VersionString; powershell=$PSVersionTable.PSVersion.ToString() }
-  $process.StandardInput.WriteLine(($hello | ConvertTo-Json -Compress)); $process.StandardInput.Flush()
+  $process.StandardInput.WriteLine((ConvertTo-MaintenanceJson $hello)); $process.StandardInput.Flush()
   Write-Host 'Waiting for the server to confirm the SSH maintenance connection...'
   $ready = $process.StandardOutput.ReadLineAsync()
   if (-not $ready.Wait(30000)) { throw 'The server did not confirm the connection within 30 seconds.' }
@@ -49,7 +53,7 @@ try {
       }
     } catch { $response = @{ id=$request.id; status='failed'; error=$_.Exception.Message } }
     finally { $engine.Dispose() }
-    $process.StandardInput.WriteLine(($response | ConvertTo-Json -Compress -Depth 8)); $process.StandardInput.Flush()
+    $process.StandardInput.WriteLine((ConvertTo-MaintenanceJson $response)); $process.StandardInput.Flush()
   }
 } finally {
   if ($null -ne $process -and -not $process.HasExited) { $process.Kill() }

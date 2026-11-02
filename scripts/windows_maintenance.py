@@ -24,7 +24,7 @@ async def read(reader):
     return json.loads(line)
 
 async def send(writer,value):
-    writer.write((json.dumps(value,ensure_ascii=False)+'\n').encode());await writer.drain()
+    writer.write((json.dumps(value,ensure_ascii=True)+'\n').encode());await writer.drain()
 
 class Broker:
     def __init__(self,folder,token,expires):
@@ -49,7 +49,8 @@ class Broker:
                 result=await read(reader)
                 future=self.pending.get(result.get('id'))
                 if future and not future.done():future.set_result(result)
-        except (EOFError,ConnectionError,ValueError,asyncio.TimeoutError):pass
+        except (EOFError,ConnectionError,ValueError,asyncio.TimeoutError) as error:
+            print('Maintenance transport ended:',type(error).__name__,str(error)[:160],flush=True)
         finally:
             if self.peer is writer:
                 self.peer=None

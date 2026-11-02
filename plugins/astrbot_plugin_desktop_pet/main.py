@@ -26,7 +26,7 @@ from .remote import RemoteMixin
 from .media import unpack
 
 
-@register("astrbot_plugin_desktop_pet", "zhizhangzhu", "Coopanion 桌宠终端：共用人格、记忆和主动决策", "0.2.0")
+@register("astrbot_plugin_desktop_pet", "zhizhangzhu", "Coopanion 桌宠终端：共用人格、记忆和主动决策", "0.2.1")
 class DesktopPetPlugin(RemoteMixin, ScheduleMixin, Star):
     def __init__(self, context: Context, config: dict):
         super().__init__(context)
@@ -125,9 +125,10 @@ class DesktopPetPlugin(RemoteMixin, ScheduleMixin, Star):
         cid = await manager.get_curr_conversation_id(origin)
         conversation = await manager.get_conversation(origin, cid) if cid else None
         cfg = self.context.get_config(umo=origin)
-        selected, persona, _ = await self.context.persona_manager.resolve_selected_persona(
+        resolved = await self.context.persona_manager.resolve_selected_persona(
             umo=origin, conversation_persona_id=getattr(conversation, "persona_id", None),
             platform_name="aiocqhttp", provider_settings=cfg.get("provider_settings", {}))
+        selected, persona = resolved[:2]
         return binding if persona is not None and selected == binding.persona_id else None
 
     async def authorized_peer(self, event):
@@ -193,7 +194,7 @@ class DesktopPetPlugin(RemoteMixin, ScheduleMixin, Star):
         cid = await manager.get_curr_conversation_id(origin)
         conversation = await manager.get_conversation(origin, cid) if cid else None
         cfg = self.context.get_config(umo=origin)
-        selected, persona, _ = await self.context.persona_manager.resolve_selected_persona(
+        resolved = await self.context.persona_manager.resolve_selected_persona(
             umo=origin, conversation_persona_id=getattr(conversation, "persona_id", None),
             platform_name="aiocqhttp", provider_settings=cfg.get("provider_settings", {}))
         if selected != binding.persona_id or persona is None:

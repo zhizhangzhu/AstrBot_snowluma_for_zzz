@@ -5,6 +5,7 @@ import asyncio
 import time
 import uuid
 import contextvars
+import logging
 from dataclasses import dataclass, field
 from collections import deque
 from typing import Awaitable, Callable
@@ -174,7 +175,8 @@ class Hub:
         except asyncio.CancelledError:
             if not self.stopping and kind=="cognition":self.store.update(peer.binding.device_id,mid,"unknown")
             raise
-        except Exception:
+        except Exception as error:
+            logging.getLogger(__name__).warning("Desktop remote %s failed (%s)",kind,type(error).__name__,exc_info=True)
             if not self.stopping and self.peer(peer.binding) is peer:
                 await peer.socket.send_json(frame(kind+"_result",mid,{"error":"remote_request_failed"}))
 

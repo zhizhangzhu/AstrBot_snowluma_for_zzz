@@ -21,14 +21,20 @@ class RemoteMixin:
             return {'error':'paired_identity_unavailable'}
         if kind=='query':
             if payload.get('kind')=='usage':return {'items':self.store.usages(binding)}
-            if payload.get('kind')=='persona':
+            if payload.get('kind') in {'persona','identity'}:
                 owner=installed(self.context,'astrbot_plugin_private_companion')
                 if owner is None:return {'error':'companion_unavailable'}
                 token=owner._activate_persona_id(binding.persona_id,allow_inactive=True)
                 try:
                     user=owner.data.get('users',{}).get(binding.user_id,{})
+                    cfg=self.context.get_config(umo=binding.conversation_origin)
+                    model=cfg.get('agent_runner',{}).get('config',{}).get('model',{}).get('provider_id','')
+                    identity={'persona_id':binding.persona_id,'bot_name':binding.persona_id,
+                              'user_id':binding.user_id,'user_name':str(user.get('nickname') or user.get('last_display_name') or binding.user_id),
+                              'timezone':str(cfg.get('timezone') or 'Asia/Shanghai'),'model_id':str(model or '')}
+                    if payload.get('kind')=='identity':return identity
                     text=await owner._resolve_proactive_persona_prompt(user,umo=binding.conversation_origin)
-                    return {'persona_id':binding.persona_id,'text':text}
+                    return {**identity,'text':text}
                 finally:
                     if token is not None:owner._deactivate_persona_for_event(token)
             return await self.read_history(binding,payload)
