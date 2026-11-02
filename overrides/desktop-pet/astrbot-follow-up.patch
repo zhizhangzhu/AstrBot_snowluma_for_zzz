@@ -1,0 +1,21 @@
+--- a/follow_up.py
++++ b/follow_up.py
+@@ -8,6 +8,8 @@
+ from astrbot.core.astr_agent_run_util import AgentRunner
+ from astrbot.core.platform.astr_message_event import AstrMessageEvent
+ from astrbot.core.utils.active_event_registry import active_event_registry
++
++DESKTOP_TRANSPORT_GUARD_VERSION = 1
+ 
+ _ACTIVE_AGENT_RUNNERS: dict[str, AgentRunner] = {}
+ _FOLLOW_UP_ORDER_STATE: dict[str, dict[str, object]] = {}
+@@ -182,6 +184,9 @@
+         return None
+     runner_event = getattr(getattr(runner.run_context, "context", None), "event", None)
+     if runner_event is None:
++        return None
++    # Shared conversation identity does not change the transport of a running reply.
++    if runner_event.get_platform_name() != event.get_platform_name():
+         return None
+     active_sender_id = runner_event.get_sender_id()
+     if not active_sender_id or active_sender_id != sender_id:
