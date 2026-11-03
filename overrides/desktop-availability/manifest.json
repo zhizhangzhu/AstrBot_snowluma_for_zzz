@@ -1,0 +1,20 @@
+{
+  "format": 1,
+  "requires": "desktop-pet 0.2.4 and dialogue-cognition overlay",
+  "groups": {
+    "companion": {
+      "root": "data/astrbot/plugins/astrbot_plugin_private_companion",
+      "patch": "companion.patch",
+      "files": {
+        "real_schedule/runtime.py": {
+          "before": "6a7995480465201e766d119e8030d12b2635cc05dbd05a594c1077620f04538f",
+          "after": "552f53c34a14ab33a79404caf03c18d1b95da2c0193bd22a8fa753513451f79b"
+        },
+        "tests/test_real_schedule_audit_regressions.py": {
+          "before": "5719db73b09833f951e6662557ca4ff14b145257e3ccf3b854e130acef64adf1",
+          "after": "165c9e4c51666cc222993333d099ef33c9332e16557745f2744d9b043fd7d7cb"
+        }
+      }
+    }
+  }
+}

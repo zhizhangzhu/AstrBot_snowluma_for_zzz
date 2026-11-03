@@ -1,0 +1,59 @@
+--- a/core/models.py
++++ b/core/models.py
+@@ -132,6 +132,8 @@
+     companion_expression_self_disclosure: str = ""
+     companion_expression_humor_mode: str = ""
+     companion_expression_topic_initiative: str = ""
++    # Physical transport remains distinct from the verified shared memory namespace.
++    source_platform: str = ""
+ 
+     @property
+     def current_target_id(self) -> str:
+--- a/core/identity.py
++++ b/core/identity.py
+@@ -140,7 +140,17 @@
+         if scope == "unknown" and user_id:
+             scope = "private"
+ 
++        source_platform = clean_text(platform, 80)
++        namespace = getattr(event, "verified_memory_namespace", None)
++        if callable(namespace):
++            verified = namespace()
++            if (verified.get("session_id") != session_id or verified.get("bot_id") != bot_id
++                    or verified.get("user_id") != user_id or verified.get("persona_id") != persona_id):
++                raise ValueError("desktop_memory_namespace_conflict")
++            platform = verified["platform"]
++
+         ctx = SessionContext(
++            source_platform=source_platform,
+             session_id=session_id,
+             scope=scope,
+             platform=clean_text(platform, 80),
+--- a/core/service.py
++++ b/core/service.py
+@@ -1839,6 +1839,7 @@
+             "owner_bot_id": clean_text(self._bot_subject_id(ctx), 120),
+             "persona_id": clean_text(ctx.persona_id, 96),
+             "platform": clean_text(ctx.platform, 80),
++            "source_platform": clean_text(getattr(ctx, "source_platform", "") or ctx.platform, 80),
+             "participant_user_id": clean_text(ctx.user_id, 120),
+             "participant_user_name": clean_text(ctx.user_name, 80),
+             "source_group_id": clean_text(ctx.group_id, 120),
+@@ -1918,7 +1919,7 @@
+             expected_person_id=ctx.user_id,
+             expected_scope=ctx.scope,
+             expected_session_id=ctx.session_id,
+-            expected_platform=ctx.platform,
++            expected_platform=getattr(ctx, "source_platform", "") or ctx.platform,
+             expected_bot_id=ctx.bot_id,
+         )
+         projection = consumed.get("projection") if isinstance(consumed, dict) else None
+@@ -1967,7 +1968,7 @@
+             expected_person_id=ctx.user_id,
+             expected_scope=ctx.scope,
+             expected_session_id=ctx.session_id,
+-            expected_platform=ctx.platform,
++            expected_platform=getattr(ctx, "source_platform", "") or ctx.platform,
+             expected_bot_id=ctx.bot_id,
+         )
+         decision = consumed.get("decision") if isinstance(consumed, dict) else None

@@ -1,0 +1,5 @@
+{
+  "enabled": {"description": "启用桌宠 WSS 接入（先配置证书并配对设备）", "type": "bool", "default": false},
+  "host": {"description": "监听地址", "type": "string", "default": "0.0.0.0"},
+  "port": {"description": "监听端口", "type": "int", "default": 6190}
+}
