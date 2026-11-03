@@ -94,3 +94,35 @@ async def test_actual_module_reload_updates_dispatch_without_double_wrapping(led
     await p.text_chat(prompt='after reload')
     assert httpx.AsyncClient.send is stable
     assert len(ledger.store.rows('SELECT * FROM requests'))==1
+
+@pytest.mark.asyncio
+async def test_codex_sse_without_event_stream_header_is_accounted(ledger):
+    sse='data: '+json.dumps({'type':'response.completed','response':{'usage':{'input_tokens':41,'output_tokens':5}}})+'\n\n'
+    class Codex(Provider):
+        async def text_chat(self,**kw):
+            async with httpx.AsyncClient(transport=self.transport) as client:
+                await client.post('https://provider.invalid/responses',json={'model':'gpt-6-luna','stream':True})
+            return SimpleNamespace(usage=None)
+    provider=Codex(httpx.MockTransport(lambda req:httpx.Response(200,text=sse,headers={'content-type':'text/plain'})))
+    instrument_provider(provider);await provider.text_chat()
+    rows=ledger.store.rows('SELECT * FROM requests')
+    assert len(rows)==1 and rows[0]['input']==41 and rows[0]['output']==5 and rows[0]['cost'] is not None
+
+@pytest.mark.asyncio
+async def test_compressed_stream_preserves_provider_bytes_and_recovers_usage(ledger):
+    import gzip
+    plain=b'data: '+json.dumps({'type':'response.completed','response':{'usage':{'input_tokens':12,'output_tokens':3}}}).encode()+b'\n\n'
+    encoded=gzip.compress(plain)
+    class Bytes(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            for start in range(0,len(encoded),7):yield encoded[start:start+7]
+    class Stream(Provider):
+        async def text_chat(self,**kw):
+            async with httpx.AsyncClient(transport=self.transport) as client:
+                async with client.stream('POST','https://provider.invalid/responses',json={'model':'gpt-6-luna','stream':True}) as response:
+                    assert await response.aread()==plain
+            return SimpleNamespace(usage=None)
+    provider=Stream(httpx.MockTransport(lambda req:httpx.Response(200,stream=Bytes(),headers={'content-type':'text/event-stream','content-encoding':'gzip'})))
+    instrument_provider(provider);await provider.text_chat()
+    rows=ledger.store.rows('SELECT * FROM requests')
+    assert len(rows)==1 and rows[0]['input']==12 and rows[0]['output']==3

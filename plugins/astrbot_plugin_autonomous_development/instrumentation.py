@@ -44,14 +44,28 @@ def caller_scope():
 
 
 class UsageStream(httpx.AsyncByteStream):
-    def __init__(self, stream, ledger, request_id):
+    def __init__(self, stream, ledger, request_id, encoding=""):
         self.stream, self.ledger, self.request_id = stream, ledger, request_id
         self.buffer = b''
         self.usage = None
         self.finished = False
         self.status = 'completed'
+        self.decode_failed = False
+        from httpx._decoders import SUPPORTED_DECODERS, MultiDecoder
+        decoders = [SUPPORTED_DECODERS[name.strip()]() for name in encoding.lower().split(',') if name.strip() in SUPPORTED_DECODERS]
+        self.decoder = MultiDecoder(decoders) if decoders else None
 
     def feed(self, chunk):
+        if self.decode_failed:return
+        try:
+            decoded = self.decoder.decode(chunk) if self.decoder else chunk
+        except Exception:
+            self.decode_failed = True
+            self.buffer = b''
+            return  # Observation must not corrupt bytes consumed by the provider.
+        self.feed_decoded(decoded)
+
+    def feed_decoded(self, chunk):
         self.buffer += chunk
         while b'\n' in self.buffer:
             line, self.buffer = self.buffer.split(b'\n', 1)
@@ -72,8 +86,11 @@ class UsageStream(httpx.AsyncByteStream):
     def finish(self, state=None):
         if not self.finished:
             self.finished = True
+            if self.decoder and not self.decode_failed:
+                try:self.feed_decoded(self.decoder.flush())
+                except Exception:self.decode_failed=True
             if self.buffer:
-                self.feed(b'\n')
+                self.feed_decoded(b'\n')
             self.ledger.finish(self.request_id, self.usage, state or self.status)
 
     async def __aiter__(self):
@@ -110,8 +127,10 @@ def install(ledger):
         if not request.url.path.rstrip('/').endswith(('/responses', '/chat/completions', '/embeddings', '/images/generations', '/images/edits')):
             return await original(client, request, *args, **kwargs)
         try:
-            payload = json.loads(request.content)
+            content = request.content
+            payload = json.loads(content)
         except (ValueError, RuntimeError):
+            content = b''
             payload = {}
         if not isinstance(payload, dict):
             payload = {}
@@ -120,7 +139,7 @@ def install(ledger):
         if request.url.path.endswith('/embeddings'):
             max_output = 0
         max_output *= max(1, int(payload.get('n') or 1))
-        incoming = min(4_000_000, len(request.content))  # UTF-8 bytes give a conservative text-token bound.
+        incoming = min(4_000_000, len(content))  # UTF-8 bytes give a conservative text-token bound.
         feature = caller_scope() if not scope.get('plugin') else {}
         owner = {**scope, **feature}
         owner['effort'] = str((payload.get('reasoning') or {}).get('effort') or payload.get('reasoning_effort') or owner.get('effort', ''))
@@ -138,13 +157,24 @@ def install(ledger):
             observer.feed(response.content)
             observer.finish('completed' if response.is_success else 'failed')
         elif kwargs.get('stream') or 'text/event-stream' in response.headers.get('content-type', ''):
-            response.stream = UsageStream(response.stream, sink, request_id)
+            observer = UsageStream(response.stream, sink, request_id, response.headers.get('content-encoding', ''))
+            observer.status = 'completed' if response.is_success else 'failed'
+            response.stream = observer
         else:
             try:
-                usage = normalize_usage(response.json())
+                value = response.json()
+                usage = normalize_usage(value.get('response', value) if isinstance(value, dict) else value)
             except (ValueError, UnicodeError):
                 usage = None
-            sink.finish(request_id, usage, 'completed' if response.is_success else 'failed', {'http_status': response.status_code})
+            state = 'completed' if response.is_success else 'failed'
+            # Codex can return SSE with text/plain/application/json. HTTPX has
+            # already decoded the consumed body, so parse it without decoding twice.
+            if usage is None and payload.get('stream') is True:
+                parser = UsageStream(response.stream, sink, request_id)
+                parser.feed(response.content + b'\n')
+                usage = parser.usage
+                if parser.status == 'failed':state='failed'
+            sink.finish(request_id, usage, state, {'http_status': response.status_code})
         return response
 
     ANCHOR.send_handler = observed_send
