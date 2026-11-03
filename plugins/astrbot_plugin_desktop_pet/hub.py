@@ -20,6 +20,9 @@ from .media import unpack
 class DeliveryUnknown(RuntimeError):
     pass
 
+class DeliveryNotSubmitted(DeliveryUnknown):
+    """No desktop command was submitted; a proactive caller may select QQ."""
+    pass
 
 @dataclass
 class Peer:
@@ -29,7 +32,9 @@ class Peer:
     catalog: dict = field(default_factory=lambda: {"worlds": []})
     revision: str = ""
     pending: dict[str, asyncio.Future] = field(default_factory=dict)
+    probes: dict[bytes, asyncio.Future] = field(default_factory=dict)
     heartbeat: float = field(default_factory=time.monotonic)
+    state_at: float = field(default_factory=time.monotonic)
     event_times: deque = field(default_factory=deque)
 
 
@@ -40,18 +45,19 @@ class Hub:
         self.inflight: set[asyncio.Future] = set()
         self.stopping = False
         self.remote = None
+        self.prepare = None
         self.background = set()
         self.active_calls = {}
 
     def peer(self, binding: Binding) -> Peer | None:
         peer = self.peers.get(binding.device_id)
-        return peer if peer and self.store.enabled(binding) and time.monotonic()-peer.heartbeat < 65 else None
+        return peer if peer and not getattr(peer.socket, 'closed', False) and self.store.enabled(binding) and time.monotonic()-peer.heartbeat < 45 and time.monotonic()-peer.state_at < 45 else None
 
     def for_origin(self, origin: str) -> Peer | None:
         return next((p for p in self.peers.values() if p.binding.conversation_origin == origin and self.peer(p.binding)), None)
 
     def preference(self, origin: str) -> str:
-        if any(b.conversation_origin == origin and (self.store.dnd(b.device_id) or self.store.quiet(b.device_id)) for b in self.store.bindings()):
+        if any(b.conversation_origin == origin and self.store.dnd(b.device_id) for b in self.store.bindings()):
             return "wait"
         peer = self.for_origin(origin)
         return route(peer.state if peer else None)
@@ -63,7 +69,7 @@ class Hub:
             raise web.HTTPUnauthorized(text="device_authentication_required")
         if not request.secure:
             raise web.HTTPForbidden(text="tls_required")
-        socket = web.WebSocketResponse(heartbeat=20, max_msg_size=MAX_FRAME)
+        socket = web.WebSocketResponse(heartbeat=20, autoping=False, max_msg_size=MAX_FRAME)
         await socket.prepare(request)
         peer = Peer(binding, socket)
         old = self.peers.get(binding.device_id)
@@ -77,6 +83,13 @@ class Hub:
             await socket.send_json(frame("reconcile", uuid.uuid4().hex, {"ids": unresolved}))
         try:
             async for raw in socket:
+                if raw.type == WSMsgType.PONG:
+                    pending = peer.probes.get(bytes(raw.data))
+                    if pending and not pending.done():pending.set_result(True)
+                    continue
+                if raw.type == WSMsgType.PING:
+                    await socket.pong(raw.data)
+                    continue
                 if raw.type != WSMsgType.TEXT:
                     break
                 if not self.store.enabled(binding):
@@ -94,6 +107,8 @@ class Hub:
             for pending in peer.pending.values():
                 if not pending.done():
                     pending.set_exception(DeliveryUnknown("terminal_disconnected"))
+            for probe in peer.probes.values():
+                if not probe.done():probe.set_exception(DeliveryNotSubmitted('terminal_disconnected_before_submission'))
             await socket.close()
             await self.notify(binding)
         return socket
@@ -105,13 +120,13 @@ class Hub:
     async def handle(self, peer: Peer, message: dict) -> None:
         kind, mid, payload = message["type"], message["id"], message["payload"]
         if kind == "ping":
+            if isinstance(payload.get('state'), dict):
+                await self.update_state(peer, payload['state'])
+            else:
+                peer.state_at = time.monotonic()
             await peer.socket.send_json(frame("pong", mid, {}))
         elif kind in {"state", "hello"}:
-            peer.state = terminal_state(payload)
-            self.store.set_dnd(peer.binding.device_id, peer.state["dnd"])
-            self.store.set_quiet(peer.binding.device_id, peer.state["ready"] and (
-                peer.state["locked"] or peer.state["suspended"] or (peer.state["body"] and not peer.state["visible"])))
-            await self.notify(peer.binding)
+            await self.update_state(peer, payload)
         elif kind == "catalog":
             peer.catalog = catalog(payload)
             peer.revision = mid
@@ -164,6 +179,15 @@ class Hub:
             record = self.store.get(peer.binding.device_id, mid)
             await peer.socket.send_json(frame("ack", mid, {"status": record["state"]}))
 
+    async def update_state(self, peer, payload):
+        state = terminal_state(payload)
+        changed = state != peer.state
+        peer.state, peer.state_at = state, time.monotonic()
+        self.store.set_dnd(peer.binding.device_id, state['dnd'])
+        self.store.set_quiet(peer.binding.device_id, False)
+        if changed:
+            await self.notify(peer.binding)
+
     async def reply_remote(self, peer, kind, mid, payload):
         try:
             if kind=="cognition" and not self.store.claim(peer.binding.device_id,mid,"cognition",payload):
@@ -185,6 +209,25 @@ class Hub:
         peer=self.peer(binding)
         if peer:await peer.socket.send_json(frame(kind,uuid.uuid4().hex,payload))
 
+    async def reachable_before_submission(self, peer, timeout=2):
+        """A control ping proves a live connection without submitting visible content."""
+        nonce = uuid.uuid4().hex.encode()
+        future = asyncio.get_running_loop().create_future()
+        settled = asyncio.get_running_loop().create_future()
+        peer.probes[nonce] = future;self.inflight.add(settled)
+        try:
+            await peer.socket.ping(nonce)
+            await asyncio.wait_for(asyncio.shield(future), timeout)
+        except (asyncio.TimeoutError, ConnectionError, DeliveryNotSubmitted) as exc:
+            if self.stopping:raise DeliveryUnknown('terminal_hub_stopped') from exc
+            peer.heartbeat = 0
+            raise DeliveryNotSubmitted('terminal_unreachable_before_submission') from exc
+        finally:
+            peer.probes.pop(nonce, None)
+            if not future.done():future.cancel()
+            self.inflight.discard(settled);settled.set_result(None)
+        if self.stopping:raise DeliveryUnknown('terminal_hub_stopped')
+
     async def call(self, binding: Binding, world: str, tool: str, arguments: dict,
                    *, timeout: float = 120, call_id: str | None = None, attachments=None, proactive=False, parent_call_id=None) -> dict:
         if self.stopping:
@@ -196,15 +239,25 @@ class Hub:
             unpack(attachments)
         peer = self.peer(binding)
         if not peer or not peer.state.get("ready"):
-            raise DeliveryUnknown("terminal_unavailable")
-        if peer.state.get("locked") or peer.state.get("suspended"):
-            raise DeliveryUnknown("terminal_not_interactive")
+            raise DeliveryNotSubmitted("terminal_unavailable")
+        if peer.state.get("locked") or peer.state.get("suspended") or peer.state.get("screen_off"):
+            raise DeliveryNotSubmitted("terminal_not_interactive")
+        if proactive and self.preference(binding.conversation_origin) == 'qq':
+            raise DeliveryNotSubmitted("terminal_not_visible")
         if proactive and self.preference(binding.conversation_origin) != "desktop":
             raise DeliveryUnknown("terminal_proactive_deferred")
         spec = next((t for w in peer.catalog["worlds"] if w["id"] == world and w.get("supported") is True
                      for t in w.get("tools", []) if t["name"] == tool), None)
         if spec is None:
             raise ProtocolError("tool_not_available")
+        if proactive:
+            await self.reachable_before_submission(peer)
+            if self.preference(binding.conversation_origin) == 'qq':
+                raise DeliveryNotSubmitted('terminal_became_unavailable_before_submission')
+            if self.preference(binding.conversation_origin) != 'desktop':
+                raise DeliveryUnknown('terminal_proactive_deferred')
+        if self.prepare is not None:
+            arguments = self.prepare(binding, world, tool, arguments)
         mid = call_id or uuid.uuid4().hex
         if not self.store.claim(binding.device_id, mid, "call", {"world": world, "tool": tool}):
             previous = self.store.get(binding.device_id, mid)

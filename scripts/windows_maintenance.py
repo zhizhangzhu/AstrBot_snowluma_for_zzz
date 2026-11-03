@@ -3,6 +3,7 @@
 from __future__ import annotations
 import argparse
 import asyncio
+import fcntl
 import json
 import os
 from pathlib import Path
@@ -86,23 +87,38 @@ class Broker:
 
 async def serve(folder,ttl):
     folder.mkdir(parents=True,exist_ok=True,mode=0o700);os.chmod(folder,0o700)
-    token=secrets.token_urlsafe(32);expires=time.time()+ttl
-    path=folder/'session.local.json'
-    fd=os.open(path,os.O_WRONLY|os.O_CREAT|os.O_TRUNC,0o600)
-    with os.fdopen(fd,'w') as stream:json.dump({'token':token,'expires_at':expires},stream)
-    broker=Broker(folder,token,expires);servers=[]
+    lock=os.open(folder/'broker.lock',os.O_RDWR|os.O_CREAT,0o600)
+    try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+    except BlockingIOError:
+        os.close(lock);raise ValueError('maintenance_already_running')
+    broker=None;servers=[];owned=[]
     try:
+        for name in ('agent.sock','control.sock'):
+            path=folder/name
+            if not path.exists():continue
+            probe=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM);probe.settimeout(.25)
+            try:probe.connect(str(path))
+            except (ConnectionRefusedError,FileNotFoundError):path.unlink(missing_ok=True)
+            else:raise ValueError('maintenance_socket_in_use')
+            finally:probe.close()
+        token=secrets.token_urlsafe(32);expires=time.time()+ttl
+        path=folder/'session.local.json'
+        fd=os.open(path,os.O_WRONLY|os.O_CREAT|os.O_TRUNC,0o600)
+        os.fchmod(fd,0o600)
+        with os.fdopen(fd,'w') as stream:json.dump({'token':token,'expires_at':expires},stream)
+        owned.append(path);broker=Broker(folder,token,expires)
         for name,handler in [('agent.sock',broker.agent),('control.sock',broker.control)]:
             path=folder/name
-            if path.exists():raise ValueError('maintenance_socket_exists')
             servers.append(await asyncio.start_unix_server(handler,path=str(path),limit=LIMIT))
+            owned.append(path)
             os.chmod(path,0o600)
         print('Maintenance broker ready; waiting for the user-started Windows agent.',flush=True)
         await asyncio.sleep(ttl)
     finally:
         for server in servers:server.close();await server.wait_closed()
-        for name in ('agent.sock','control.sock','session.local.json'):(folder/name).unlink(missing_ok=True)
-        if broker.peer:broker.peer.close()
+        for path in owned:path.unlink(missing_ok=True)
+        if broker and broker.peer:broker.peer.close()
+        os.close(lock)
 
 async def join(folder):
     reader,writer=await asyncio.open_unix_connection(str(folder/'agent.sock'),limit=LIMIT)

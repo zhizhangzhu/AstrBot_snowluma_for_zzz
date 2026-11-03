@@ -7,7 +7,7 @@ from aiohttp import web
 import pytest
 import pytest_asyncio
 
-from plugins.astrbot_plugin_desktop_pet.hub import Hub, DeliveryUnknown
+from plugins.astrbot_plugin_desktop_pet.hub import Hub, DeliveryUnknown, DeliveryNotSubmitted
 from plugins.astrbot_plugin_desktop_pet.protocol import Binding, ProtocolError, catalog, decode, frame, route
 from plugins.astrbot_plugin_desktop_pet.store import Store
 from plugins.astrbot_plugin_desktop_pet.manage import certificates
@@ -140,10 +140,12 @@ async def test_reload_shutdown_settles_inflight_call_before_database_retirement(
     (None, 'qq'), ({'ready': False}, 'qq'),
     ({'ready': True, 'body': True, 'visible': True}, 'desktop'),
     ({'ready': True, 'body': True, 'visible': True, 'dnd': True}, 'wait'),
-    ({'ready': True, 'body': True, 'visible': False}, 'wait'),
-    ({'ready': True, 'body': True, 'visible': True, 'locked': True}, 'wait'),
+    ({'ready': True, 'body': True, 'visible': False}, 'qq'),
+    ({'ready': True, 'body': True, 'visible': True, 'locked': True}, 'qq'),
+    ({'ready': True, 'body': True, 'visible': True, 'suspended': True}, 'qq'),
+    ({'ready': True, 'body': True, 'visible': True, 'screen_off': True}, 'qq'),
 ])
-def test_routing_waits_instead_of_bypassing_quiet_state(state, expected):
+def test_only_a_visible_body_takes_priority_and_explicit_dnd_still_waits(state, expected):
     assert route(state) == expected
 
 
@@ -187,6 +189,77 @@ async def test_proactive_call_rechecks_persisted_dnd_before_sending(terminal):
     await socket.send_json(frame('ping', 'no-call-was-sent', {}))
     assert (await socket.receive_json())['type'] == 'pong'
 
+@pytest.mark.asyncio
+async def test_offline_and_legacy_quiet_do_not_block_qq_but_do_not_replay_uncertain_calls(terminal):
+    hub, store, connect, a, b, *_ = terminal
+    socket, other = await connect(a), await connect(b)
+    store.set_quiet(a.device_id, True)
+    task = asyncio.create_task(hub.call(a, 'desktop-pet', 'pet_say', {}, call_id='uncertain'))
+    await socket.receive_json(); await socket.close()
+    with pytest.raises(DeliveryUnknown): await task
+    assert hub.preference(a.conversation_origin) == 'qq'
+    assert store.get(a.device_id,'uncertain')['state'] == 'unknown'
+    assert hub.preference(b.conversation_origin) == 'desktop' and not other.closed
+
+@pytest.mark.asyncio
+async def test_dead_application_or_stale_state_cannot_keep_a_live_socket_as_primary(terminal):
+    hub, store, connect, a, *_ = terminal
+    socket = await connect(); peer = hub.peer(a)
+    peer.state_at -= 46
+    assert hub.preference(a.conversation_origin) == 'qq'
+    with pytest.raises(DeliveryNotSubmitted):
+        await hub.call(a,'desktop-pet','pet_say',{},call_id='not-sent',proactive=True)
+    assert store.get(a.device_id,'not-sent') is None
+    await socket.send_json(frame('ping','alive',{'state':{'ready':True,'body':True,'visible':True}}))
+    await socket.receive_json()
+    assert hub.preference(a.conversation_origin) == 'desktop'
+    peer.heartbeat -= 46
+    assert hub.preference(a.conversation_origin) == 'qq'
+
+@pytest.mark.asyncio
+async def test_screen_turns_off_between_generation_and_submission_without_claiming_delivery(terminal):
+    hub, store, connect, a, *_ = terminal
+    socket = await connect()
+    assert hub.preference(a.conversation_origin) == 'desktop'
+    await socket.send_json(frame('state','display-off',{'ready':True,'body':True,'visible':True,'screen_off':True}))
+    await socket.send_json(frame('ping','off-barrier',{})); await socket.receive_json()
+    assert hub.preference(a.conversation_origin) == 'qq'
+    with pytest.raises(DeliveryNotSubmitted):
+        await hub.call(a,'desktop-pet','pet_say',{},call_id='before-submit',proactive=True)
+    assert store.get(a.device_id,'before-submit') is None
+
+@pytest.mark.asyncio
+async def test_fresh_but_silent_connection_does_not_receive_proactive_content(terminal):
+    hub, store, connect, a, *_ = terminal
+    socket = await connect();socket._autoping=False
+    task=asyncio.create_task(hub.call(a,'desktop-pet','pet_say',{'script':'A new message'},call_id='silent',proactive=True))
+    control=await socket.receive()
+    assert control.type==aiohttp.WSMsgType.PING
+    with pytest.raises(DeliveryNotSubmitted):await task
+    assert store.get(a.device_id,'silent') is None
+    assert hub.preference(a.conversation_origin)=='qq'
+
+@pytest.mark.asyncio
+async def test_live_proactive_connection_answers_control_probe_before_receiving_content(terminal):
+    hub, store, connect, a, *_ = terminal
+    socket = await connect()
+    task=asyncio.create_task(hub.call(a,'desktop-pet','pet_say',{'script':'A new message'},call_id='live',proactive=True))
+    call=await socket.receive_json()
+    assert call['type']=='call' and call['id']=='live'
+    await socket.send_json(frame('result','live',{'status':'completed','text':'Displayed'}))
+    assert (await task)['status']=='completed'
+
+@pytest.mark.asyncio
+async def test_reload_during_preflight_does_not_reroute_a_retiring_task_to_qq(terminal):
+    hub, store, connect, a, *_ = terminal
+    socket=await connect();socket._autoping=False
+    task=asyncio.create_task(hub.call(a,'desktop-pet','pet_say',{},call_id='retiring',proactive=True))
+    assert (await socket.receive()).type==aiohttp.WSMsgType.PING
+    await hub.stop()
+    with pytest.raises(DeliveryUnknown) as result:await task
+    assert not isinstance(result.value,DeliveryNotSubmitted)
+    assert not hub.inflight and store.get(a.device_id,'retiring') is None
+
 
 def test_ip_certificate_renewal_retains_the_paired_ca(tmp_path):
     from cryptography import x509
@@ -208,7 +281,7 @@ async def test_sleep_disconnect_waits_until_resume_and_normal_exit_allows_future
     await socket.send_json(frame('state', 'sleep', {'ready': True, 'body': True, 'visible': True, 'suspended': True}))
     await socket.send_json(frame('ping', 'sleep-recorded', {})); await socket.receive_json()
     await socket.close()
-    assert hub.preference(a.conversation_origin) == 'wait'
+    assert hub.preference(a.conversation_origin) == 'qq'
     socket = await connect()
     assert hub.preference(a.conversation_origin) == 'desktop'
     await socket.send_json(frame('state', 'normal-exit', {'ready': False, 'body': False, 'visible': False}))

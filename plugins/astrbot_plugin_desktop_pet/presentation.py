@@ -8,6 +8,19 @@ EMBODIMENT = (
 )
 
 
+def prepare_speech(owner, binding, world, tool, arguments):
+    """Apply the bound persona's common text transforms to visible tool speech."""
+    key = 'script' if tool == 'pet_say' else 'question' if tool == 'pet_ask' else None
+    if world != 'desktop-pet' or key is None or not isinstance(arguments.get(key), str):
+        return arguments
+    transform = getattr(owner, '_split_proactive_text', None)
+    if not callable(transform):
+        return arguments
+    parts = transform(arguments[key], umo=binding.conversation_origin,
+                      force_common_transforms=True, common_transforms_only=True)
+    return {**arguments, key: parts[0] if parts else arguments[key]}
+
+
 def snapshot_for(peer, observations, *, light=False):
     return {"state": peer.state, "recent_observations": observations[-(3 if light else 8):],
             "worlds": [{"id": w["id"], "supported": w.get("supported"),

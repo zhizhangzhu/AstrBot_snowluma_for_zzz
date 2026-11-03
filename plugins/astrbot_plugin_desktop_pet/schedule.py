@@ -59,7 +59,11 @@ class ScheduleMixin:
             "Return only JSON: {\"act\":false,\"reason\":\"...\"} or "
             "{\"act\":true,\"world\":\"...\",\"tool\":\"...\",\"arguments\":{...}}. "
             "Generate any words you say in your own persona voice. Do not claim an outcome before execution.\n"
-            + json.dumps({"goal": request.get("intent", {}), "capabilities": peer.catalog}, ensure_ascii=False)
+            "The execution time below is authoritative for greetings and references to today. "
+            "A planned time describes an intention, never the current time. Do not replay missed greetings or "
+            "describe an afternoon/evening activity as happening now when it is currently morning.\n"
+            + json.dumps({"execution_time": owner._environment_now().isoformat(),
+                          "goal": request.get("intent", {}), "capabilities": peer.catalog}, ensure_ascii=False)
         )
         raw = await owner._llm_call(prompt, system_prompt=persona, task="real_schedule_desktop", max_tokens=1000, timeout_seconds=60)
         choice = owner._extract_json_payload(raw or "")

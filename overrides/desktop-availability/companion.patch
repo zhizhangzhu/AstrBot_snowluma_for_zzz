@@ -1,0 +1,19 @@
+--- a/real_schedule/runtime.py
++++ b/real_schedule/runtime.py
+@@ -343 +343 @@
+-            self.ledger.reschedule(scope,item['id'],earliest=now+delay*60,note=str(item.get('reason') or '重新考虑活动'),cancel=item['decision']=='cancel')
++            self.ledger.reschedule(scope,item['id'],earliest=max(float(pending[item['id']]['earliest']),now+delay*60),note=str(item.get('reason') or '重新考虑活动'),cancel=item['decision']=='cancel')
+--- a/tests/test_real_schedule_audit_regressions.py
++++ b/tests/test_real_schedule_audit_regressions.py
+@@ -88,0 +89,11 @@
++
++@pytest.mark.asyncio
++async def test_deferring_a_future_day_plan_cannot_move_it_to_the_current_morning(host):
++    r=runtime.service(host);scope=r.scope();day=r.day()
++    future=time.time()+6*3600
++    row=r.ledger.enqueue(scope,day,'news','A future activity','future-slot',earliest=future,
++                         payload={'source':'daily_plan','planned_time':'21:30'})
++    host.response={'pending_changes':[{'id':row['id'],'decision':'defer','delay_minutes':5,'cause':'preference','reason':'Consider this later'}]}
++    await r.plan(scope,day,[],[row])
++    result=r.ledger.activity(scope,row['id'])
++    assert result['state']=='deferred' and result['earliest']>=future

@@ -55,7 +55,7 @@ def apply():
                 if 'source' in spec:shutil.copyfile(SOURCE/spec['source'],local)
                 if sha(local)!=spec['after']:raise RuntimeError('Prepared source differs: '+relative)
                 writes[str(Path(g['root'])/relative)]=local.read_bytes()
-        backup=ROOT/'backups'/('dialogue-cognition-apply-'+time.strftime('%Y%m%d-%H%M%S'));backup.mkdir(parents=True)
+        backup=ROOT/'backups'/(SOURCE.name+'-apply-'+time.strftime('%Y%m%d-%H%M%S'));backup.mkdir(parents=True)
         state={}
         for relative,data in writes.items():
             target=ROOT/relative;state[relative]={'before':sha(target),'after':hashlib.sha256(data).hexdigest()}
@@ -79,8 +79,11 @@ def rollback(backup):
     print('Source rollback complete; user state untouched')
 
 def main():
+    global SOURCE
     parser=argparse.ArgumentParser();parser.add_argument('action',choices=['check','apply','rollback']);parser.add_argument('backup',nargs='?',type=Path)
+    parser.add_argument('--overlay',choices=['dialogue-cognition','desktop-availability'],default='dialogue-cognition')
     args=parser.parse_args()
+    SOURCE=ROOT/'overrides'/args.overlay
     if args.action=='apply':apply()
     elif args.action=='rollback':
         if args.backup is None:parser.error('rollback requires the generated backup directory')

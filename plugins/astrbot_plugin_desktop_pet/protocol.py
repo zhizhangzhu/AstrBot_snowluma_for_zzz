@@ -85,16 +85,18 @@ def catalog(value: dict) -> dict:
 
 
 def terminal_state(value: dict) -> dict[str, bool]:
-    fields = ("ready", "body", "visible", "locked", "suspended", "dnd")
+    fields = ("ready", "body", "visible", "locked", "suspended", "screen_off", "dnd")
     return {key: value.get(key) is True for key in fields}
 
 
 def route(state: dict[str, bool] | None) -> str:
-    """Unavailable falls back; an online hidden/quiet terminal waits instead."""
+    """Only a reachable, visible body takes priority; explicit DND still waits."""
+    if state and state.get("dnd"):
+        return "wait"
     if not state or not state.get("ready"):
         return "qq"
-    if state.get("dnd") or state.get("locked") or state.get("suspended"):
-        return "wait"
+    if state.get("locked") or state.get("suspended") or state.get("screen_off"):
+        return "qq"
     if not state.get("body"):
         return "qq"
-    return "desktop" if state.get("visible") else "wait"
+    return "desktop" if state.get("visible") else "qq"

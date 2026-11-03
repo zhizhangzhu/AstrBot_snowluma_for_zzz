@@ -19,17 +19,17 @@ from astrbot.api.star import Context, Star, StarTools, register
 from .adapter import DesktopEvent, DesktopPlatform
 from .hub import Hub
 from .store import Store
-from .hub import DeliveryUnknown
+from .hub import DeliveryUnknown, DeliveryNotSubmitted
 from .integrations import record_outputs, installed
 from .schedule import ScheduleMixin
 from .remote import RemoteMixin
 from .media import unpack
-from .presentation import EMBODIMENT, snapshot_for
+from .presentation import EMBODIMENT, snapshot_for, prepare_speech
 from .interactions import InteractionBuffer
 from .avatar import AvatarCache
 
 
-@register("astrbot_plugin_desktop_pet", "zhizhangzhu", "Coopanion 桌宠终端：共用人格、记忆和主动决策", "0.2.3")
+@register("astrbot_plugin_desktop_pet", "zhizhangzhu", "Coopanion 桌宠终端：共用人格、记忆和主动决策", "0.2.4")
 class DesktopPetPlugin(RemoteMixin, ScheduleMixin, Star):
     def __init__(self, context: Context, config: dict):
         super().__init__(context)
@@ -38,22 +38,37 @@ class DesktopPetPlugin(RemoteMixin, ScheduleMixin, Star):
         self.store = Store(self.root / "terminal.sqlite3")
         self.hub = Hub(self.store, self.receive)
         self.hub.remote = self.remote_request
+        self.hub.prepare = self.prepare_tool_call
         self.platform = DesktopPlatform(context, self.hub)
         self.interactions = InteractionBuffer(self.receive, self.settle_interaction)
         self.avatars = AvatarCache(self.root / 'qq_avatars')
         self.runner = None
         self.startup = None
 
+    def prepare_tool_call(self, binding, world, tool, arguments):
+        owner = installed(self.context, 'astrbot_plugin_private_companion')
+        if owner is None:
+            return arguments
+        token = owner._activate_persona_id(binding.persona_id, allow_inactive=True)
+        try:
+            return prepare_speech(owner, binding, world, tool, arguments)
+        finally:
+            if token is not None:
+                owner._deactivate_persona_for_event(token)
+
     def proactive_preference(self, owner, origin):
         if self.hub.stopping:
             return "wait"
         binding = next((b for b in self.store.bindings() if b.conversation_origin == origin
                         and b.persona_id == owner._active_persona_scope()), None)
-        if binding and (self.store.dnd(binding.device_id) or self.store.quiet(binding.device_id)):
+        if binding and self.store.dnd(binding.device_id):
             return "wait"
         peer = self.hub.for_origin(origin)
         if not peer or owner._active_persona_scope() != peer.binding.persona_id:
             return "qq"
+        preference = self.hub.preference(origin)
+        if preference != 'desktop':
+            return preference
         if self.store.outstanding(peer.binding.device_id):
             return "wait"
         return self.hub.preference(origin)
@@ -75,6 +90,8 @@ class DesktopPetPlugin(RemoteMixin, ScheduleMixin, Star):
                     return False
                 delivered_chain = [Plain(transcript)] + [part for part in chain if isinstance(part, Image)]
             await self.platform.deliver(peer.binding, MessageChain(delivered_chain), proactive=True)
+        except DeliveryNotSubmitted:
+            return None
         except (DeliveryUnknown, TimeoutError, RuntimeError):
             # Once submitted to a desktop, an unknown result must not trigger QQ fallback.
             return False
@@ -94,7 +111,10 @@ class DesktopPetPlugin(RemoteMixin, ScheduleMixin, Star):
                 return None
             if preference == "wait":
                 return False
-            receipt = await self.platform.deliver(binding, message, proactive=True)
+            try:
+                receipt = await self.platform.deliver(binding, message, proactive=True)
+            except DeliveryNotSubmitted:
+                return None
             if receipt is None:
                 return False
             request_id = str(receipt.get("request_id") or uuid.uuid4().hex)
