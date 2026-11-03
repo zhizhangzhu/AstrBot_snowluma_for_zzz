@@ -13,6 +13,9 @@ for name in "${legacy_services[@]}"; do
         fi
     fi
 done
+if [[ -f .runtime/evolution.enabled ]]; then
+    python3 scripts/evolution_service.py start
+fi
 compose up -d
 python3 scripts/ensure_oauth.py
 "$PROJECT_DIR/bots/chuxiaoqing/start.sh" --qq-only
