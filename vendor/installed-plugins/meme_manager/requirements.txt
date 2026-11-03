@@ -1,0 +1,9 @@
+aiohttp
+tqdm
+boto3
+botocore
+pillow
+requests
+httpx>=0.27,<1
+beautifulsoup4>=4.12,<5
+faiss-cpu

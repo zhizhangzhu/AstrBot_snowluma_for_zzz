@@ -1,0 +1,3 @@
+# Preserve installed upstream source byte-for-byte for hash-based drift checks.
+# Formatting warnings in the imported baseline are not project edits.
+vendor/installed-plugins/** -text -whitespace
