@@ -29,7 +29,7 @@ from .interactions import InteractionBuffer
 from .avatar import AvatarCache
 
 
-@register("astrbot_plugin_desktop_pet", "zhizhangzhu", "Coopanion 桌宠终端：共用人格、记忆和主动决策", "0.2.4")
+@register("astrbot_plugin_desktop_pet", "zhizhangzhu", "Coopanion 桌宠终端：共用人格、记忆和主动决策", "0.2.5")
 class DesktopPetPlugin(RemoteMixin, ScheduleMixin, Star):
     def __init__(self, context: Context, config: dict):
         super().__init__(context)
@@ -271,8 +271,8 @@ class DesktopPetPlugin(RemoteMixin, ScheduleMixin, Star):
             if record and record['kind']=='event':self.store.update(binding.device_id,record['id'],'delivered')
             payload=raw.get("desktop_event",{})
             await self.hub.notify_terminal(binding,"lifecycle",{"kind":"delivered","cursor":payload.get("cursor")})
-        if source:
-            req.system_prompt += "\nYour final conversational reply is delivered to this desktop automatically. You do not need pet_say for ordinary replies; if a tool already displayed speech, do not duplicate that text.\n"
+        if source and binding:
+            req.system_prompt += "\nThis input came from the authenticated paired Windows desktop terminal. Sharing a QQ conversation identity does not make this a QQ command. Native computer-use tools request consent in the desktop app when invoked; a requested tool call may open that permission dialog, and a refusal or cancellation must be respected. Lock, sleep and offline state still block execution. Multi-step work is complete only when every required step has its own completed receipt. A successful move does not establish a later return or undo; report any unexecuted step as unfinished. Your final conversational reply is delivered to this desktop automatically. You do not need pet_say for ordinary replies; if a tool already displayed speech, do not duplicate that text.\n"
             req.prompt = f"[Source: Windows desktop terminal; world: {source['world']}; interaction: {source['type']}]\n" + req.prompt
         if peer is None:
             if binding:
@@ -334,8 +334,11 @@ class DesktopPetPlugin(RemoteMixin, ScheduleMixin, Star):
         offset = max(0, offset)
         if world:
             entry = next((w for w in peer.catalog["worlds"] if w["id"] == world), None)
-            return json.dumps({**(entry or {}), "tools": (entry or {}).get("tools", [])[offset:offset+12],
-                               "offset": offset}, ensure_ascii=False)
+            tools = (entry or {}).get("tools", [])
+            more = offset + 12 < len(tools)
+            return json.dumps({**(entry or {}), "connected": True, "state": peer.state,
+                               "tools": tools[offset:offset+12], "offset": offset, "total_tools": len(tools),
+                               "more": more, "next_offset": offset + 12 if more else None}, ensure_ascii=False)
         return json.dumps({"connected": True, "state": peer.state, "offset": offset,
                            "worlds": [{"id": w["id"], "label": w.get("label", w["id"]), "supported": w.get("supported"),
                                        "reason": w.get("reason", ""), "tool_count": len(w.get("tools", []))}
@@ -372,6 +375,8 @@ class DesktopPetPlugin(RemoteMixin, ScheduleMixin, Star):
         request_id = uuid.uuid4().hex
         try:
             result = await self.hub.call(peer.binding, world, capability, value, call_id=request_id)
+        except DeliveryNotSubmitted as exc:
+            return json.dumps({"request_id": request_id, "status": "unavailable", "submitted": False, "reason": str(exc)})
         except (DeliveryUnknown, TimeoutError):
             return json.dumps({"request_id": request_id, "status": "unknown", "next": "Inspect the receipt before retrying."})
         result["request_id"] = request_id

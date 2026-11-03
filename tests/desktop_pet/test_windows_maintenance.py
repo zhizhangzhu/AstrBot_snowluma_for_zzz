@@ -53,3 +53,23 @@ async def test_ssh_join_handshake_command_and_remote_disconnect(tmp_path):
         for process in (agent,broker):
             if process and process.returncode is None:
                 process.terminate();await process.wait()
+
+@pytest.mark.asyncio
+async def test_ttl_closes_an_idle_connected_agent_before_waiting_for_servers(tmp_path):
+    code="import asyncio,runpy,sys; from pathlib import Path; m=runpy.run_path(sys.argv[1]); asyncio.run(m['serve'](Path(sys.argv[2]),.8))"
+    broker=await asyncio.create_subprocess_exec(sys.executable,'-c',code,str(SCRIPT),str(tmp_path),stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.PIPE)
+    writer=None
+    try:
+        assert b'ready' in await asyncio.wait_for(broker.stdout.readline(),3)
+        credential=json.loads((tmp_path/'session.local.json').read_text())
+        reader,writer=await asyncio.open_unix_connection(str(tmp_path/'agent.sock'))
+        writer.write(json.dumps({'protocol':2,'token':credential['token'],'host':'test','user':'tester'}).encode()+b'\n');await writer.drain()
+        assert json.loads(await asyncio.wait_for(reader.readline(),3))=={'ready':True}
+        assert await asyncio.wait_for(reader.read(),3)==b''
+        await asyncio.wait_for(broker.wait(),3)
+        assert broker.returncode==0
+        assert not (tmp_path/'session.local.json').exists()
+        assert not (tmp_path/'control.sock').exists()
+    finally:
+        if writer:writer.close();await writer.wait_closed()
+        if broker.returncode is None:broker.terminate();await broker.wait()

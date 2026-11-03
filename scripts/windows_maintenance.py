@@ -63,7 +63,9 @@ class Broker:
             if not self.authorized(writer):return
             request=await asyncio.wait_for(read(reader),10)
             if request.get('action')=='status':
-                await send(writer,{'connected':self.peer is not None,'expires_at':self.expires,**self.info});return
+                await send(writer,{'connected':self.peer is not None and time.time()<self.expires,'expires_at':self.expires,**self.info});return
+            if time.time()>=self.expires:
+                await send(writer,{'status':'unavailable','error':'maintenance_expired'});return
             script=request.get('script')
             if not isinstance(script,str) or not script.strip() or len(script.encode())>65536:
                 raise ValueError('invalid_script')
@@ -115,9 +117,10 @@ async def serve(folder,ttl):
         print('Maintenance broker ready; waiting for the user-started Windows agent.',flush=True)
         await asyncio.sleep(ttl)
     finally:
-        for server in servers:server.close();await server.wait_closed()
-        for path in owned:path.unlink(missing_ok=True)
+        for server in servers:server.close()
         if broker and broker.peer:broker.peer.close()
+        for server in servers:await server.wait_closed()
+        for path in owned:path.unlink(missing_ok=True)
         os.close(lock)
 
 async def join(folder):
