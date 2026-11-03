@@ -12,6 +12,12 @@ ROOT=Path(__file__).resolve().parents[1]
 FOLDER=ROOT/'.runtime/evolution-transport'
 PID=FOLDER/'worker.pid'
 SCRIPT=ROOT/'scripts/evolution_worker.py'
+UNIT='astrbot-evolution-publisher.service'
+UNIT_SOURCE=ROOT/'deploy/systemd'/UNIT
+
+def managed():
+    result=subprocess.run(['/usr/bin/systemctl','show',UNIT,'--property=FragmentPath','--value'],capture_output=True,text=True)
+    return result.returncode==0 and Path(result.stdout.strip()).resolve()==UNIT_SOURCE.resolve()
 
 def running():
     try:
@@ -23,9 +29,11 @@ def main():
     parser=argparse.ArgumentParser();parser.add_argument('action',choices=['start','stop','status']);args=parser.parse_args()
     pid=running()
     if args.action=='status':
-        print(json.dumps({'running':bool(pid),'socket':(FOLDER/'worker.sock').is_socket()}));return
+        print(json.dumps({'running':bool(pid),'socket':(FOLDER/'worker.sock').is_socket(),'systemd_managed':managed()}));return
     if args.action=='stop':
-        if pid:
+        if managed():
+            subprocess.run(['/usr/bin/systemctl','stop',UNIT],check=True,timeout=345)
+        elif pid:
             os.kill(pid,signal.SIGTERM)
             for _ in range(50):
                 if not running():break
@@ -33,6 +41,13 @@ def main():
             if running():raise SystemExit('工程执行器正在结束在途操作，尚未确认退出；请稍后查看状态。')
         print('工程执行器已停止；任务与数据保留。');return
     if pid:return
+    if managed():
+        subprocess.run(['/usr/bin/systemctl','start',UNIT],check=True,timeout=30)
+        for _ in range(50):
+            if running() and (FOLDER/'worker.sock').is_socket():
+                print('受限发布器已由系统服务启动。');return
+            time.sleep(.1)
+        raise SystemExit('受限发布器系统服务尚未就绪，请检查该服务状态。')
     if os.geteuid()!=0:raise SystemExit('工程执行器需要主机管理员创建隔离环境；不会降级为直接执行。')
     spec=json.loads((ROOT/'.runtime/evolution-control/manifest.json').read_text())
     test=subprocess.run(['/usr/bin/docker','image','inspect',spec['runner_image']],capture_output=True)
