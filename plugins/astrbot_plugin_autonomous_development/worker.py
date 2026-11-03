@@ -121,12 +121,13 @@ class Worker:
             if payload.get('repository', 'parent') not in ('parent', 'client'):
                 raise ValueError('仓库未登记')
             ws = Workspace(repository, folder / 'unused')
-            names = ws.git('ls-tree', '-r', '--name-only', 'HEAD').decode().splitlines()
+            base = self.releases.source_base(repository)
+            names = ws.git('ls-tree', '-r', '--name-only', base).decode().splitlines()
             allowed = []
             for name in names:
                 try: allowed.append(relative_path(name))
                 except (PermissionError, ValueError): pass
-            return {'base_commit': ws.git('rev-parse', 'HEAD').decode().strip(), 'files': allowed[:5000]}
+            return {'base_commit': base, 'files': allowed[:5000]}
         if op == 'prepare':
             if folder.exists():
                 if not (folder / 'metadata.json').exists():
@@ -149,7 +150,9 @@ class Worker:
             if not isinstance(checks, list) or not checks or len(checks) > 12:
                 raise ValueError('批准方案必须含1至12条实际检查命令')
             ws = self.workspace(repository, folder / 'workspace')
-            base = payload.get('base_commit') or 'HEAD'
+            base = payload.get('base_commit') or self.releases.source_base(repository)
+            if base != self.releases.source_base(repository):
+                raise PermissionError('方案源码基线已变化，请核对并重新规划')
             if base != 'HEAD' and not re.fullmatch(r'[a-f0-9]{40,64}', base):
                 raise ValueError('基础版本须为完整提交号')
             result = ws.prepare(base)
@@ -244,6 +247,8 @@ class Worker:
                 raise PermissionError('产物版本已变化')
             if meta['committed']:
                 return {'commit': meta['commit'], 'branch': meta['branch']}
+            if self.releases.source_base(meta['repository'])!=meta['base_commit']:
+                raise PermissionError('检查后的源码基线已变化，暂停旧任务提交')
             # Separate worktree preserves the human's current branch and uncommitted files.
             branch = 'codex/autonomous-' + job_id[4:]
             exported = folder / 'export'
@@ -294,8 +299,10 @@ class Worker:
             return result
         if op == 'push_parent':
             if not meta.get('integration_commit'): raise PermissionError('父仓库集成提交尚未准备')
-            target={'repository':str(self.root),'branch':meta['integration_branch'],'commit':meta['integration_commit']}
+            target={'repository':str(self.root),'branch':meta['integration_branch'],'commit':meta['integration_commit'],
+                'base_commit':meta['integration_base']}
             result=await asyncio.to_thread(self.releases.push,target)
+            self.releases.record_source(self.root,meta['integration_commit'],expected=meta['integration_base'])
             meta.update(integration_uploaded=result['uploaded']);self.save(folder,meta)
             return {'integration_uploaded':result['uploaded'],'integration_commit':meta['integration_commit']}
         if op == 'status':

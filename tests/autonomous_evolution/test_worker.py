@@ -117,3 +117,34 @@ async def test_cancel_during_submitted_restart_preserves_real_receipt(tmp_path):
     assert cancellation['completion_pending'] and not pending.done()
     release.set();result=await pending
     assert result['restarted'] and (await call('status'))['restarted']
+
+@pytest.mark.asyncio
+@pytest.mark.host_isolation
+async def test_following_task_uses_published_source_while_human_branch_stays_untouched(tmp_path):
+    root=repo(tmp_path);worker=Worker(root)
+    human=subprocess.check_output(['git','-C',str(root),'rev-parse','HEAD']).decode().strip()
+    def task():
+        tid='dev_'+uuid.uuid4().hex
+        async def call(operation,**args):return await worker.execute({'identity':asdict(owner_identity()),'task_id':tid,'operation':operation,**args})
+        return call
+    first=task();await first('prepare',paths=['docs/sample.md'],checks=[['/usr/bin/true']])
+    await first('write',files={'docs/sample.md':'after\n'});verified=await first('verify');one=await first('commit',diff_sha256=verified['diff_sha256'])
+    await first('deploy',commit=one['commit'])
+    second=task();inventory=await second('inventory')
+    assert inventory['base_commit']==one['commit']
+    await second('prepare',paths=['docs/sample.md'],checks=[['/usr/bin/true']])
+    assert (await second('read',path='docs/sample.md'))['text']=='after\n'
+    await second('write',files={'docs/sample.md':'next\n'});verified=await second('verify');two=await second('commit',diff_sha256=verified['diff_sha256'])
+    await second('deploy',commit=two['commit'])
+    assert worker.releases.source_base(root)==two['commit'] and (root/'docs/sample.md').read_text()=='next\n'
+    assert subprocess.check_output(['git','-C',str(root),'rev-parse','HEAD']).decode().strip()==human
+    stale=task()
+    with pytest.raises(PermissionError):await stale('prepare',base_commit=one['commit'],paths=['docs/sample.md'],checks=[['/usr/bin/true']])
+    with pytest.raises(PermissionError):await first('rollback')
+    await second('rollback')
+    assert worker.releases.source_base(root)==one['commit'] and (root/'docs/sample.md').read_text()=='after\n'
+    # An independent human commit must not silently discard deployed source history.
+    (root/'docs/human.md').write_text('manual')
+    subprocess.run(['git','-C',str(root),'add','--','docs/human.md'],check=True)
+    subprocess.run(['git','-C',str(root),'-c','user.name=Test','-c','user.email=test@example.invalid','commit','-qm','human change'],check=True)
+    with pytest.raises(PermissionError):worker.releases.source_base(root)
