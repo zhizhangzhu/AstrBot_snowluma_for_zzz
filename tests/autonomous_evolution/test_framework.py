@@ -1,0 +1,108 @@
+"""Load the entire entry module and use the actual dispatcher, not an extracted AST method."""
+import json
+from types import SimpleNamespace as S
+from unittest.mock import AsyncMock
+import pytest
+pytest.importorskip('astrbot.api')
+from astrbot.core.astr_agent_tool_exec import FunctionToolExecutor, FunctionTool
+from astrbot_plugin_autonomous_development.main import AutonomousDevelopment
+from astrbot_plugin_autonomous_development.db import Store
+from astrbot_plugin_autonomous_development.tasks import Tasks
+from astrbot_plugin_autonomous_development.integrations import event_identity
+
+class Event:
+    def __init__(self,platform='xiaoxiaoqing',bot='2893214983',user='1005145948'):
+        self.unified_msg_origin=platform+':FriendMessage:'+user;self.bot=bot;self.user=user
+    def get_self_id(self):return self.bot
+    def get_sender_id(self):return self.user
+    def get_group_id(self):return ''
+    def get_result(self):return None
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('arity',[3,4])
+async def test_real_function_executor_proposes_goal_and_uses_real_identity_validation(tmp_path,arity):
+    owner=AutonomousDevelopment.__new__(AutonomousDevelopment)
+    owner.store=Store(tmp_path/'state.sqlite3');owner.tasks=Tasks(owner.store)
+    companion=S(_primary_persona_id=lambda:'小小情');memory=S(service=object())
+    owner.context=S(get_all_stars=lambda:[S(name='astrbot_plugin_private_companion',activated=True,star_cls=companion),S(name='astrbot_plugin_memory_companion',activated=True,star_cls=memory)],
+        get_config=lambda **kw:{'provider_settings':{}},
+        conversation_manager=S(get_curr_conversation_id=AsyncMock(return_value=None)),
+        persona_manager=S(resolve_selected_persona=AsyncMock(return_value=tuple(['小小情',object(),None,None][:arity]))))
+    tool=FunctionTool(name='autonomous_growth',description='test',parameters={},handler=owner.growth_tool)
+    event=Event();ctx=S(context=S(event=event),tool_call_timeout=30)
+    results=[r async for r in FunctionToolExecutor.execute(tool=tool,run_context=ctx,operation='propose',arguments={'goal':'改进公开阅读功能'})]
+    payload=json.loads(results[0].content[0].text)
+    assert payload['ok'] and payload['data']['state']=='proposed'
+    # The same real tool path must reject both the secondary identity and approval attempts.
+    ctx.context.event=Event('chuxiaoqing','2510093206','1207862759')
+    denied=[r async for r in FunctionToolExecutor.execute(tool=tool,run_context=ctx,operation='propose',arguments={'goal':'不应创建的任务'})]
+    assert not json.loads(denied[0].content[0].text)['ok']
+    ctx.context.event=event
+    denied=[r async for r in FunctionToolExecutor.execute(tool=tool,run_context=ctx,operation='approval',arguments={'decision':'approved'})]
+    assert not json.loads(denied[0].content[0].text)['ok']
+    assert len(owner.store.rows('SELECT * FROM tasks'))==1
+    owner.store.close()
+
+@pytest.mark.asyncio
+async def test_real_astrbot_knowledge_create_index_and_retrieve_are_confirmed(tmp_path,monkeypatch):
+    """Real DB/vector pipeline; deterministic fixture vectors are not a production model."""
+    import numpy as np
+    import astrbot.core.knowledge_base.kb_mgr as module
+    from astrbot.core.provider.provider import EmbeddingProvider
+    from astrbot_plugin_autonomous_development.knowledge import Knowledge
+    from astrbot_plugin_autonomous_development.integrations import owner_identity
+    class FixtureEmbedding(EmbeddingProvider):
+        def __init__(self):
+            super().__init__({'id':'fixture-embedding','model':'fixture-vector'},{});self.model_name='fixture-vector'
+        def meta(self):return S(id='fixture-embedding')
+        def get_dim(self):return 8
+        async def get_embedding(self,text):
+            v=np.zeros(8,dtype=float)
+            for c in text:v[ord(c)%8]+=1
+            length=float(np.linalg.norm(v)) or 1
+            return (v/length).tolist()
+        async def get_embeddings(self,texts):return [await self.get_embedding(t) for t in texts]
+    embedding=FixtureEmbedding()
+    monkeypatch.setattr(module,'DB_PATH',tmp_path/'native-kb.sqlite')
+    monkeypatch.setattr(module,'FILES_PATH',str(tmp_path/'native-files'))
+    manager=module.KnowledgeBaseManager(S(get_provider_by_id=AsyncMock(return_value=embedding)))
+    await manager.initialize()
+    store=Store(tmp_path/'governance.sqlite3')
+    knowledge=Knowledge(S(kb_manager=manager,get_all_embedding_providers=lambda:[embedding]),store)
+    created=await knowledge.create(owner_identity(),'隔离测试资料','fixture-embedding')
+    config=knowledge.config();config['enabled']=True;store.set_setting('knowledge',config)
+    text='这是隔离测试中的公开资料正文，用来验证AstrBot原生知识库的文档、向量索引和来源回查。'*10
+    source={'url':'https://example.org/isolated-fixture','text':text,'public':True,'evidence_kind':'article_text_acquired'}
+    knowledge.enqueue(source)
+    result=await knowledge.save(owner_identity(),created['kb_id'],text,source['url'],'索引与检索验证')
+    assert result['indexed'] and result['document']['retrieval_confirmed']
+    repeated=await knowledge.save(owner_identity(),created['kb_id'],text,source['url'],'索引与检索验证')
+    assert repeated['duplicate'] and len(store.rows('SELECT * FROM documents'))==1
+    found=await knowledge.search(owner_identity(),'索引与检索验证')
+    assert any(r['doc_id']==result['document']['astrbot_doc_id'] for r in found['results'])
+    from astrbot_plugin_autonomous_development.instrumentation import usage_scope
+    with usage_scope(bot='2510093206',persona='初小晴'):
+        assert await manager.retrieve(query='索引与检索验证',kb_names=['隔离测试资料']) is None
+    assert await manager.retrieve(query='索引与检索验证',kb_names=['隔离测试资料']) is None
+    knowledge.unbind_manager()
+    store.close()
+
+@pytest.mark.asyncio
+async def test_management_requires_actual_dashboard_login_and_rejects_stale_setting(tmp_path,monkeypatch):
+    import astrbot_plugin_autonomous_development.api as api
+    from astrbot_plugin_autonomous_development.usage import UsageLedger
+    store=Store(tmp_path/'admin.sqlite3')
+    plugin=S(stopping=False,store=store,tasks=Tasks(store),ledger=UsageLedger(store))
+    admin=api.Administration(plugin)
+    unauth=S(username='',method='POST',body=AsyncMock(side_effect=AssertionError('must not read anonymous body')))
+    monkeypatch.setattr(api,'request',unauth)
+    response=await admin.handle()
+    assert response.status_code==401 and unauth.body.await_count==0
+    plugin.configuration=S(enabled=lambda:{'enabled':True,'cooldown_seconds':3600,'daily_changes':8})
+    plugin.knowledge=S(config=lambda:{'enabled':True,'readable_kbs':[],'writable_kbs':[],'shared_kbs':[],'topics':[],'allowed_domains':[],'embedding_provider_id':'','daily_documents':5})
+    plugin.background=lambda coroutine:coroutine.close()
+    value=plugin.tasks.mode()
+    first=await admin.dispatch('setting',{'key':'development','value':value,'revision':0},'dashboard:admin')
+    assert first['revision']==1
+    with pytest.raises(ValueError):await admin.dispatch('setting',{'key':'development','value':value,'revision':0},'dashboard:admin')
+    store.close()
