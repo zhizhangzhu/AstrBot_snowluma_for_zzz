@@ -119,7 +119,7 @@ class AutonomousDevelopment(Star, Schedule):
         for row in self.tasks.list(owner_identity())[:20]:
             payload = row['payload']
             if not (payload.get('base_commit') or payload.get('kind') == 'service_restart'): continue
-            if row['state'] in ('completed', 'rolled_back', 'cancelled', 'installed'): continue
+            if row['state'] in ('completed', 'rolled_back', 'installed') or (row['state']=='cancelled' and payload.get('cancel_settled')): continue
             last, _ = self.store.setting('outcome_probe:' + row['id'], 0)
             if time.time()-last < (300 if payload.get('windows') else 30): continue
             self.store.set_setting('outcome_probe:' + row['id'], time.time())
@@ -136,6 +136,8 @@ class AutonomousDevelopment(Star, Schedule):
                 elif result.get('committed') and state == 'verified': state = 'committed'
                 latest = self.tasks.get(owner_identity(), row['id'])
                 if latest['state'] in ('cancelled', 'paused', 'rolled_back'): state = latest['state']
+                if latest['state']=='cancelled' and not result.get('running'):
+                    facts['cancel_settled'] = True
                 merged = {**latest['payload'], **facts}
                 if merged != latest['payload'] or state != latest['state']:
                     self.tasks.update(owner_identity(), row['id'], state=state, payload=merged, expected=latest['revision'])

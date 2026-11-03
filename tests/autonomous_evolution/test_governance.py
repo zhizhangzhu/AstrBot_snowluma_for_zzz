@@ -105,3 +105,13 @@ async def test_real_isolation_blocks_host_files_and_preserves_test_exit(tmp_path
     (ws.directory / 'link').symlink_to(tmp_path)
     with pytest.raises(PermissionError):
         ws.write({'link/escape.txt': 'bad'}, ['link/escape.txt'])
+
+
+def test_resume_uses_actual_receipts_instead_of_restarting_a_committed_workspace():
+    assert Tasks.resume_state({})=='proposed'
+    assert Tasks.resume_state({'plan':{'paths':['docs/a.md']},'base_commit':'a'*40})=='running'
+    assert Tasks.resume_state({'plan':{},'artifact':{'checks':['actual']}})=='verified'
+    assert Tasks.resume_state({'commit':'a'*40,'artifact':{}})=='committed'
+    assert Tasks.resume_state({'commit':'a'*40,'uploaded':True})=='uploaded'
+    assert Tasks.resume_state({'windows':{'state':'awaiting_windows_channel'}})=='awaiting_windows_channel'
+    assert Tasks.resume_state({'resume_state':'running','plan':{}})=='running'

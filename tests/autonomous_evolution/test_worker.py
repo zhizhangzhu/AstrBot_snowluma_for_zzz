@@ -102,3 +102,18 @@ async def test_client_commit_pins_only_submodule_on_separate_parent_branch(tmp_p
     assert git(root,'diff','--name-only',base,result['integration_commit'])=='Coopanion'
     assert target in git(root,'ls-tree',result['integration_commit'],'--','Coopanion')
     assert git(root,'rev-parse','HEAD')==base and original in git(root,'ls-tree','HEAD','--','Coopanion')
+
+@pytest.mark.asyncio
+async def test_cancel_during_submitted_restart_preserves_real_receipt(tmp_path):
+    import threading
+    root=repo(tmp_path);worker=Worker(root);tid='dev_'+uuid.uuid4().hex
+    entered=threading.Event();release=threading.Event()
+    def activate():entered.set();release.wait(5)
+    worker.releases.activate=activate
+    async def call(operation):return await worker.execute({'identity':asdict(owner_identity()),'task_id':tid,'operation':operation})
+    pending=asyncio.create_task(call('restart'))
+    await asyncio.to_thread(entered.wait,5)
+    cancellation=await call('cancel')
+    assert cancellation['completion_pending'] and not pending.done()
+    release.set();result=await pending
+    assert result['restarted'] and (await call('status'))['restarted']

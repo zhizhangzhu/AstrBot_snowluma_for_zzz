@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import contextmanager
 from types import SimpleNamespace as S
 import pytest
@@ -12,6 +13,7 @@ async def test_explicit_default_grants_preserve_old_and_secondary_permissions_an
     async def save():return True
     def apply(key,value,*args):primary[:]=value
     cp.page_api=S(_apply_config_value=apply,_save_config_if_possible=save)
+    cp._get_function_awareness=lambda:S(control=S(lock=asyncio.Lock()))
     @contextmanager
     def context(ctx):yield cp
     monkeypatch.setattr('astrbot_plugin_autonomous_development.activities.companion_context',context)

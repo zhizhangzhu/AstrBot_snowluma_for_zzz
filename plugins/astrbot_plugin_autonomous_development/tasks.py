@@ -70,6 +70,25 @@ class Tasks:
                 raise ValueError('任务已被修改，请刷新')
         return self.get(identity, tid)
 
+    def outcome(self, identity, tid, state, facts, *, expected=None):
+        """Persist a real in-flight result without undoing a human stop or revocation."""
+        row = self.get(identity, tid)
+        stopped = row['state'] in TERMINAL | {'paused', 'failed'}
+        if not stopped and expected is not None and row['revision'] != expected:
+            raise ValueError('执行期间任务已变化；保留真实执行回执，等待核验')
+        return self.update(identity, tid, state=row['state'] if stopped else state,
+            payload={**row['payload'], **facts}, expected=row['revision'])
+
+    @staticmethod
+    def resume_state(payload):
+        if payload.get('resume_state'):return payload['resume_state']
+        if payload.get('windows'):
+            phase=payload['windows'].get('state')
+            return phase if phase in ('building','awaiting_windows_channel','build_failed','installation_failed','installed') else 'building'
+        for key,state in (('deployed','deployed'),('uploaded','uploaded'),('commit','committed'),('artifact','verified'),('base_commit','running'),('plan','ready')):
+            if payload.get(key):return state
+        return 'proposed'
+
     def plan(self, identity, tid, plan):
         row = self.get(identity, tid)
         if row['state'] in TERMINAL | {'running', 'deploying', 'committed', 'uploaded', 'deployed'} or row['payload'].get('base_commit'):

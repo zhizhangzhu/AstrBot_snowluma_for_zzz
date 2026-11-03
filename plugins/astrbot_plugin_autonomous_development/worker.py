@@ -20,6 +20,8 @@ from .updates import WindowsUpdates
 from .container_runner import ContainerRunner
 
 MAX = 6_000_000
+# External publication cannot be unsubmitted by cancelling an awaiting Python thread.
+ATOMIC_OPERATIONS = {'push', 'deploy', 'rollback', 'restart', 'client_build', 'pin_parent', 'push_parent', 'client_renew', 'commit'}
 
 
 class Worker:
@@ -30,6 +32,7 @@ class Worker:
         if os.getuid() == 0:
             os.chown(self.state, self.root.stat().st_uid, self.root.stat().st_gid)
         self.active = {}
+        self.active_operations = {}
         self.mutation_lock = asyncio.Lock()
         self.releases = Release(self.root)
         self.windows = WindowsUpdates(self.root)
@@ -95,16 +98,21 @@ class Worker:
         async with self.mutation_lock:
             task = asyncio.create_task(self.execute_once(payload))
             self.active[job_id] = task
+            self.active_operations[job_id] = op
             try:
                 return await asyncio.wait_for(task, 300)
             finally:
                 self.active.pop(job_id, None)
+                self.active_operations.pop(job_id, None)
 
     async def execute_once(self, payload):
         Identity(**payload['identity']).assert_owner()
         op, job_id = payload['operation'], payload['task_id']
         folder = self.job(job_id)
         if op == 'cancel':
+            operation = self.active_operations.get(job_id)
+            if job_id in self.active and operation in ATOMIC_OPERATIONS:
+                return {'cancelled':False, 'completion_pending':True, 'operation':operation}
             if job_id in self.active:self.active[job_id].cancel()
             return {'cancelled':True}
         if op == 'inventory':

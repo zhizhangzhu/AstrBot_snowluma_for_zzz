@@ -24,3 +24,20 @@ async def test_cancelling_during_step_never_restores_running_state(tmp_path,monk
     tasks.update(identity,row['id'],state='cancelled');continue_write.set();await job
     assert tasks.get(identity,row['id'])['state']=='cancelled'
     store.close()
+
+@pytest.mark.asyncio
+async def test_real_commit_receipt_cannot_resurrect_cancelled_goal(tmp_path,monkeypatch):
+    store=Store(tmp_path/'commit.sqlite3');tasks=Tasks(store);identity=owner_identity()
+    store.set_setting('development',{'mode':'auto'})
+    row=tasks.create(identity,'核对提交取消边界')
+    tasks.update(identity,row['id'],state='verified',payload={'plan':{'paths':['docs/a.md']},'artifact':{'diff_sha256':'a'*64},'artifact_digest':'b'*64})
+    entered=asyncio.Event();release=asyncio.Event()
+    class Worker:
+        async def call(self,*args,**kw):
+            entered.set();await release.wait();return {'commit':'c'*40,'branch':'codex/autonomous-test'}
+    monkeypatch.setattr('astrbot_plugin_autonomous_development.agent.dependencies',lambda ctx:())
+    agent=Agent(None,store,tasks,Worker());pending=asyncio.create_task(agent.step(row['id']))
+    await entered.wait();tasks.update(identity,row['id'],state='cancelled');release.set();await pending
+    actual=tasks.get(identity,row['id'])
+    assert actual['state']=='cancelled' and actual['payload']['commit']=='c'*40
+    store.close()

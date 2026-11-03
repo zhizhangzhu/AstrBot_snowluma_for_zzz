@@ -147,21 +147,30 @@ class Agent:
             if state == 'verified':
                 row = self.tasks.authorize(identity, task_id, 'commit')
                 result = await self.worker.call(identity, task_id, 'commit', title=row['goal'], diff_sha256=row['payload']['artifact']['diff_sha256'])
-                if row['payload']['plan'].get('repository') == 'client':
-                    result.update(await self.worker.call(identity, task_id, 'pin_parent'))
-                return self.tasks.update(identity, task_id, state='committed', payload={**row['payload'], **result})
+                row = self.tasks.outcome(identity, task_id, 'committed', result, expected=row['revision'])
+                if row['payload']['plan'].get('repository') == 'client' and row['state']=='committed':
+                    row = self.tasks.authorize(identity, task_id, 'commit')
+                    pinned = await self.worker.call(identity, task_id, 'pin_parent')
+                    row = self.tasks.outcome(identity, task_id, 'committed', pinned, expected=row['revision'])
+                return row
             if state == 'committed':
+                if row['payload']['plan'].get('repository')=='client' and not row['payload'].get('integration_commit'):
+                    row=self.tasks.authorize(identity,task_id,'commit')
+                    pinned=await self.worker.call(identity,task_id,'pin_parent')
+                    self.tasks.outcome(identity,task_id,'committed',pinned,expected=row['revision'])
                 row = self.tasks.authorize(identity, task_id, 'push')
                 result = await self.worker.call(identity, task_id, 'push', commit=row['payload']['commit'])
-                return self.tasks.update(identity, task_id, state='uploaded', payload={**row['payload'], **result})
+                return self.tasks.outcome(identity, task_id, 'uploaded', result, expected=row['revision'])
             if state == 'uploaded':
                 client = row['payload']['plan'].get('repository') == 'client'
                 row = self.tasks.authorize(identity, task_id, 'release' if client else 'deploy')
                 if client:
-                    await self.worker.call(identity, task_id, 'push_parent')
+                    pushed = await self.worker.call(identity, task_id, 'push_parent')
+                    self.tasks.outcome(identity, task_id, 'uploaded', pushed, expected=row['revision'])
+                    row = self.tasks.authorize(identity, task_id, 'release')
                 result = await self.worker.call(identity, task_id, 'client_build' if client else 'deploy', commit=row['payload']['commit'])
-                return self.tasks.update(identity, task_id, state='building' if client else 'deployed',
-                    payload={**row['payload'], **({'windows':result} if client else result)})
+                return self.tasks.outcome(identity, task_id, 'building' if client else 'deployed',
+                    {'windows':result} if client else result, expected=row['revision'])
             return {'state': state, 'reason': '等待相应阶段操作或批准'}
         except PermissionError as exc:
             latest = self.tasks.get(identity, task_id)

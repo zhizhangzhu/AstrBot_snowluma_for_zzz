@@ -121,14 +121,18 @@ class Administration:
         if action == 'task_cancel':
             task = p.tasks.get(identity, data['id'])
             result = p.tasks.update(identity, task['id'], state='cancelled')
-            try: await p.worker.call(identity, task['id'], 'cancel')
+            try:
+                cancellation = await p.worker.call(identity, task['id'], 'cancel')
+                if cancellation.get('completion_pending'):
+                    result = p.tasks.outcome(identity, task['id'], 'cancelled',
+                        {'reason':'已停止后续步骤；已提交的发布请求正在核验真实结果', 'cancel_settled':False})
             except (OSError, RuntimeError): pass
             return result
         if action == 'task_resume':
             row = p.tasks.get(identity, data['id'])
             if row['state'] not in ('paused', 'failed'): raise ValueError('此任务无需恢复')
-            state = row['payload'].get('resume_state') or ('ready' if row['payload'].get('plan') else 'proposed')
-            return p.tasks.update(identity, row['id'], state=state, payload={**row['payload'], 'retries': 0})
+            state = p.tasks.resume_state(row['payload'])
+            return p.tasks.update(identity, row['id'], state=state, payload={k:v for k,v in {**row['payload'], 'retries':0}.items() if k!='resume_state'})
         if action == 'approval_request': return p.tasks.request_approval(identity, data['id'], data['stage'])
         if action == 'config_apply':
             return await p.configuration.apply(identity, data['key'], data['value'], data['expected_value'], data.get('reason', '面板人工调整'))
@@ -152,11 +156,11 @@ class Administration:
         if action == 'task_publish':
             row = p.tasks.authorize(identity, data['id'], 'push')
             result = await p.worker.call(identity, row['id'], 'push', commit=row['payload']['commit'])
-            return p.tasks.update(identity, row['id'], state='uploaded', payload={**row['payload'], **result})
+            return p.tasks.outcome(identity, row['id'], 'uploaded', result, expected=row['revision'])
         if action == 'task_deploy':
             row = p.tasks.authorize(identity, data['id'], 'deploy')
             result = await p.worker.call(identity, row['id'], 'deploy', commit=row['payload']['commit'])
-            return p.tasks.update(identity, row['id'], state='deployed', payload={**row['payload'], **result})
+            return p.tasks.outcome(identity, row['id'], 'deployed', result, expected=row['revision'])
         if action == 'task_rollback':
             row = p.tasks.get(identity, data['id'])
             result = await p.worker.call(identity, row['id'], 'rollback')
@@ -167,7 +171,7 @@ class Administration:
             async def restart():
                 result = await p.worker.call(identity, row['id'], 'restart')
                 latest = p.tasks.get(identity, row['id'])
-                p.tasks.update(identity, row['id'], state='completed', payload={**latest['payload'], **result})
+                p.tasks.outcome(identity, row['id'], 'completed', result)
             p.background(restart())
             return {'scheduled': True, 'reconcile_after_restart': True}
         if action == 'task_reconcile':
@@ -175,26 +179,29 @@ class Administration:
             result = await p.worker.call(identity, row['id'], 'status')
             keep = {k:result[k] for k in ('commit','branch','uploaded','deployed','restarted','completed_at','windows') if k in result}
             state = 'completed' if result.get('restarted') else 'deployed' if result.get('deployed') else row['state']
-            return p.tasks.update(identity, row['id'], state=state, payload={**row['payload'], **keep})
+            return p.tasks.outcome(identity, row['id'], state, keep)
         if action == 'client_build':
             row = p.tasks.authorize(identity, data['id'], 'release')
             if not p.tasks.mode().get('allow_push'): raise PermissionError('上传开关已关闭，不上传父仓库集成分支')
             if not row['payload'].get('integration_commit'):
                 pinned = await p.worker.call(identity, row['id'], 'pin_parent')
-                row = p.tasks.update(identity,row['id'],payload={**row['payload'],**pinned})
-            await p.worker.call(identity, row['id'], 'push_parent')
+                row = p.tasks.outcome(identity,row['id'],'uploaded',pinned,expected=row['revision'])
+                row = p.tasks.authorize(identity, row['id'], 'release')
+            pushed = await p.worker.call(identity, row['id'], 'push_parent')
+            p.tasks.outcome(identity,row['id'],'uploaded',pushed,expected=row['revision'])
+            row = p.tasks.authorize(identity, row['id'], 'release')
             result = await p.worker.call(identity, row['id'], 'client_build')
-            return p.tasks.update(identity, row['id'], state='building', payload={**row['payload'], 'windows':result})
+            return p.tasks.outcome(identity, row['id'], 'building', {'windows':result},expected=row['revision'])
         if action == 'client_renew':
             row = p.tasks.authorize(identity, data['id'], 'release')
             result = await p.worker.call(identity, row['id'], 'client_renew')
-            return p.tasks.update(identity, row['id'], state='awaiting_windows_channel', payload={**row['payload'], 'windows':result})
+            return p.tasks.outcome(identity, row['id'], 'awaiting_windows_channel', {'windows':result}, expected=row['revision'])
         if action == 'client_status':
             row = p.tasks.get(identity, data['id'])
             result = await p.worker.call(identity, row['id'], 'client_status')
             state = result['state']
             if state not in ('installed','awaiting_windows_channel','build_failed','installation_failed','building'):state=row['state']
-            return p.tasks.update(identity, row['id'], state=state, payload={**row['payload'], 'windows':result})
+            return p.tasks.outcome(identity, row['id'], state, {'windows':result}, expected=row['revision'])
         raise ValueError('未知管理操作')
 
     async def handle(self):
