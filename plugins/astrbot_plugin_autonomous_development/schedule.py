@@ -59,7 +59,7 @@ class Schedule:
             user = cp.data.get('users', {}).get(USER, {})
             persona = await cp._resolve_proactive_persona_prompt(user, umo=PLATFORM + ':FriendMessage:' + USER)
             with usage_scope(plugin='astrbot_plugin_autonomous_development', feature=feature, bot=BOT, persona=PERSONA):
-                raw = await cp._llm_call(prompt, system_prompt=persona, task='evolution_' + feature, max_tokens=1600, timeout_seconds=70)
+                raw = await cp._llm_call(prompt + self.awareness.prompt(), system_prompt=persona, task='evolution_' + feature, max_tokens=1600, timeout_seconds=70)
         return structured(raw or '{}')
 
     async def run_real_schedule_activity(self, activity_id, request):

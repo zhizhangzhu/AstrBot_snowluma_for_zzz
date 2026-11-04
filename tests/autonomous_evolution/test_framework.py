@@ -120,6 +120,8 @@ async def test_live_knowledge_readiness_is_in_owner_prompt_and_cancelled_goals_a
         persona_manager=S(resolve_selected_persona=AsyncMock(return_value=('小小情',object(),None))))
     owner.configuration=S(enabled=lambda:{'enabled':True})
     owner.knowledge=Knowledge(owner.context,owner.store)
+    from astrbot_plugin_autonomous_development.awareness import CapabilityAwareness
+    owner.awareness=CapabilityAwareness(owner.context,owner.store,owner.knowledge)
     from astrbot_plugin_autonomous_development.integrations import owner_identity
     task=owner.tasks.create(owner_identity(),'已取消的检查目标');owner.tasks.update(owner_identity(),task['id'],state='cancelled')
     req=ProviderRequest(prompt='资料是否保存了',system_prompt='原有人格')
@@ -127,7 +129,29 @@ async def test_live_knowledge_readiness_is_in_owner_prompt_and_cancelled_goals_a
     state=json.loads(req.system_prompt.split('[自主成长实际能力]\n',1)[1].splitlines()[0])
     assert not state['knowledge']['ready'] and not state['knowledge']['embedding_available']
     assert state['pending_tasks']==[] and '不能声称已经入库' in req.system_prompt
+    assert '[统一功能目录' in req.system_prompt and 'registered_reference_only' not in req.system_prompt
     other=ProviderRequest(prompt='资料',system_prompt='初小晴人格')
     await owner.on_llm_request(Event('chuxiaoqing','2510093206','1207862759'),other)
     assert other.system_prompt=='初小晴人格'
+    owner.store.close()
+
+@pytest.mark.asyncio
+async def test_capability_catalog_uses_real_dispatcher_and_keeps_secondary_bot_denied(tmp_path):
+    from astrbot_plugin_autonomous_development.awareness import CapabilityAwareness
+    owner=AutonomousDevelopment.__new__(AutonomousDevelopment)
+    owner.store=Store(tmp_path/'capability-dispatch.sqlite3')
+    companion=S(_primary_persona_id=lambda:'小小情');memory=S(service=object())
+    owner.context=S(get_all_stars=lambda:[S(name='astrbot_plugin_private_companion',activated=True,star_cls=companion),S(name='astrbot_plugin_memory_companion',activated=True,star_cls=memory)],
+        get_config=lambda **kw:{'provider_settings':{}},
+        conversation_manager=S(get_curr_conversation_id=AsyncMock(return_value=None)),
+        persona_manager=S(resolve_selected_persona=AsyncMock(return_value=('小小情',object(),None))))
+    owner.awareness=CapabilityAwareness(owner.context,owner.store)
+    tool=FunctionTool(name='autonomous_growth',description='test',parameters={},handler=owner.growth_tool)
+    ctx=S(context=S(event=Event()),tool_call_timeout=30)
+    results=[r async for r in FunctionToolExecutor.execute(tool=tool,run_context=ctx,operation='capabilities',arguments={'section':'plugins'})]
+    data=json.loads(results[0].content[0].text)
+    assert data['ok'] and data['data']['total']==2 and data['data']['coverage']=='partial'
+    ctx.context.event=Event('chuxiaoqing','2510093206','1207862759')
+    denied=[r async for r in FunctionToolExecutor.execute(tool=tool,run_context=ctx,operation='capabilities',arguments={'section':'plugins'})]
+    assert not json.loads(denied[0].content[0].text)['ok']
     owner.store.close()

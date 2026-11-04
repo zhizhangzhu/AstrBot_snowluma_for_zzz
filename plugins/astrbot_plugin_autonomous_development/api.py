@@ -95,6 +95,8 @@ class Administration:
 
     async def dispatch(self, action, data, actor):
         p, identity = self.p, self.identity
+        if action == 'capabilities':
+            return p.awareness.query(identity, **{k:data[k] for k in ('section','offset','limit','query') if k in data})
         if action == 'snapshot': return await self.snapshot()
         if action == 'usage':
             return p.ledger.summary(data.get('days', 30), str(data.get('plugin', '')), str(data.get('bot', '')), str(data.get('model', '')))
@@ -213,7 +215,7 @@ class Administration:
             if request.method == 'GET':
                 data = {k: v for k, v in request.query.items()}
                 action = data.pop('action', 'snapshot')
-                if action not in ('snapshot', 'usage'): raise PermissionError('只读请求不能执行变更')
+                if action not in ('snapshot', 'usage', 'capabilities'): raise PermissionError('只读请求不能执行变更')
             else:
                 body = await request.body()
                 if len(body) > 250_000: raise ValueError('请求过大')
