@@ -454,10 +454,10 @@
         "qzone_json.py": "9351803bee3a6fd0f64991ea6659b562f2c2eb458abe8588d0ab7fe7a91bb80e",
         "qzone_media.py": "55648d224f09b71ecc8307d06d3b653eb27d17472eb392a8e62b04d861bd4f82",
         "qzone_native_actions.py": "7e6d423f956a2507ff0754f6584e4030244054249b915faa3dcc8a8258916a58",
-        "qzone_publish.py": "1ca0f183f8c3e03bdae41fe18344423c167b0e758d6ab64e03132ed00a411532",
+        "qzone_publish.py": "ee1efa571a4ef44c523789dd787ea5dc6b54b39b01e2bbda226140fc3c318947",
         "qzone_recent_parser.py": "75665a3ba7d0be3789714067678bba0c439daf0d1653898c22e74c560604cfcc",
         "qzone_runtime.py": "b62ef66f8358db7eac306eb5da4113e642e0e3c1a389d75d88d4015106bcff5f",
-        "qzone_schedule.py": "a391d88387b2a534f43c1c3cc175f0f26af2ca6939b8a9448966ea2b9d2069f6",
+        "qzone_schedule.py": "decd10b5e1e4c3fa620a56491ccef257b21cd5796d536e171395427e6940ecb4",
         "qzone_schedule_domain.py": "912bf95d5452f8af365dbb4ea34bb6dbd95558e8922e34cff5711f058d33a334",
         "qzone_selection.py": "2a4df4ee45a2c89656f4950488095e124a2a7aa82b597947421ae33acac05253",
         "qzone_watch.py": "cf88282e999716712ff6d1965c9f8a1f5046510bd96874082f378daab4a07155",
@@ -562,7 +562,8 @@
         "wardrobe_photo.py": "144b498cc88882af73f664bb98686301a820f9f112806d4c8f6033fb7b7b1e46",
         "wardrobe_runtime.py": "93c88397e59fb610b88e60d939d7452edcbbef1d98960d11640ecb36c072a401",
         "wardrobe_style.py": "92b4656fa0f354b1e56f51c35a9001f5b18036e71693ba176ddc1d80394b2269",
-        "worldbook.py": "94c6fbd8f0782b477cedd2374c4dea7c1553b7ad575fa0e7310a5f214972a774"
+        "worldbook.py": "94c6fbd8f0782b477cedd2374c4dea7c1553b7ad575fa0e7310a5f214972a774",
+        "qzone_persona.py": "4168572e90b788713d80dc874c9d2782f52dea3676edb20cee5c4ebf2137df6c"
       }
     },
     "astrbot_plugin_memory_companion": {

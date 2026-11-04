@@ -27,6 +27,10 @@ __all__ = ("QzonePublishMixin",)
 
 class QzonePublishMixin:
     """Public post composition, sanitization, records, and image preparation."""
+    async def _qzone_post_llm_call(self, prompt: str, **kwargs):
+        from .qzone_persona import call
+        return await call(self, prompt, **kwargs)
+
     def _qzone_public_state_hint(self, state: dict[str, Any]) -> str:
         """Return a public-safe mood hint for Qzone posts without internal state fields."""
         if not isinstance(state, dict):
@@ -462,7 +466,7 @@ class QzonePublishMixin:
             )
         )
         try:
-            rewritten = await self._llm_call(
+            rewritten = await self._qzone_post_llm_call(
                 rewrite_prompt,
                 max_tokens=160,
                 provider_id=self._task_provider(
@@ -569,7 +573,7 @@ class QzonePublishMixin:
             ) if part
         )
         try:
-            draft = await self._llm_call(
+            draft = await self._qzone_post_llm_call(
                 prompt,
                 max_tokens=180,
                 provider_id=self._task_provider(
@@ -699,7 +703,7 @@ class QzonePublishMixin:
             ) if part
         )
         try:
-            draft = await self._llm_call(
+            draft = await self._qzone_post_llm_call(
                 prompt,
                 max_tokens=160,
                 provider_id=self._task_provider(
@@ -1072,7 +1076,7 @@ class QzonePublishMixin:
             ) if part
         )
         try:
-            text = await self._llm_call(
+            text = await self._qzone_post_llm_call(
                 prompt,
                 max_tokens=360,
                 provider_id=self._task_provider(

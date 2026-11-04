@@ -663,7 +663,7 @@ class QzoneScheduleMixin:
             )
         )
         try:
-            rewritten = await self._llm_call(
+            rewritten = await self._qzone_post_llm_call(
                 rewrite_prompt,
                 max_tokens=180,
                 provider_id=self._task_provider(
@@ -742,7 +742,7 @@ class QzoneScheduleMixin:
             )
         )
         try:
-            rewritten = await self._llm_call(
+            rewritten = await self._qzone_post_llm_call(
                 rewrite_prompt,
                 max_tokens=180,
                 provider_id=self._task_provider(
@@ -968,7 +968,7 @@ class QzoneScheduleMixin:
                     self._format_worldview_adaptation_prompt(),
                 ) if part
             )
-            text = await self._llm_call(
+            text = await self._qzone_post_llm_call(
                 prompt,
                 max_tokens=180,
                 provider_id=self._task_provider(
@@ -1243,7 +1243,7 @@ class QzoneScheduleMixin:
                     int(now - _safe_float(state.get("last_emotional_vent_draft_at"), now)),
                 )
             else:
-                text = await self._llm_call(
+                text = await self._qzone_post_llm_call(
                     prompt,
                     max_tokens=140,
                     provider_id=self._task_provider(
