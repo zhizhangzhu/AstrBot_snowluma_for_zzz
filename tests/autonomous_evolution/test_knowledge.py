@@ -62,7 +62,7 @@ def test_learning_reports_missing_selected_embedding_before_model_call(tmp_path)
     store=Store(tmp_path/'ready.sqlite3')
     knowledge=Knowledge(S(kb_manager=S(),get_all_embedding_providers=lambda:[S(meta=lambda:S(id='other'))]),store)
     config=knowledge.config();config.update(writable_kbs=['selected'],embedding_provider_id='missing');store.set_setting('knowledge',config)
-    ready,reason=knowledge.readiness()
+    state=knowledge.native_awareness();ready,reason=state['ready'],state['reason']
     assert not ready and 'Embedding' in reason
     store.close()
 
@@ -70,12 +70,24 @@ def test_learning_reports_missing_selected_embedding_before_model_call(tmp_path)
 def test_knowledge_awareness_reports_real_blockers_then_authorized_ids(tmp_path):
     store=Store(tmp_path/'awareness.sqlite3')
     knowledge=Knowledge(S(kb_manager=S(),get_all_embedding_providers=lambda:[S(meta=lambda:S(id='available'))]),store)
-    initial=knowledge.awareness()
+    initial=knowledge.native_awareness()
     assert initial['enabled'] and not initial['ready'] and not initial['embedding_available']
     assert 'Embedding' in initial['reason'] and '可写知识库' in initial['reason']
     cfg=knowledge.config();cfg.update(embedding_provider_id='available',writable_kbs=['own-library'],readable_kbs=['own-library']);store.set_setting('knowledge',cfg)
-    ready=knowledge.awareness()
+    ready=knowledge.native_awareness()
     assert ready['ready'] and ready['embedding_available'] and ready['writable_kb_ids']==['own-library']
     cfg['enabled']=False;store.set_setting('knowledge',cfg)
-    assert not knowledge.awareness()['ready']
+    assert not knowledge.native_awareness()['ready']
+    assert knowledge.awareness()['ready'] and knowledge.awareness()['ai_access']=='read_only'
+    assert not knowledge.readiness()[0]
+    store.close()
+
+@pytest.mark.asyncio
+async def test_local_wiki_status_is_ready_even_when_legacy_vector_manager_fails(tmp_path):
+    class Broken:
+        async def list_kbs(self):raise RuntimeError('legacy service down')
+    store=Store(tmp_path/'wiki-independent.sqlite3')
+    knowledge=Knowledge(S(kb_manager=Broken()),store)
+    result=await knowledge.status()
+    assert result['ready'] and result['wiki']['ai_access']=='read_only' and result['bases']==[]
     store.close()

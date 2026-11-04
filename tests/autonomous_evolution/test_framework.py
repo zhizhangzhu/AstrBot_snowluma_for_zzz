@@ -127,8 +127,8 @@ async def test_live_knowledge_readiness_is_in_owner_prompt_and_cancelled_goals_a
     req=ProviderRequest(prompt='资料是否保存了',system_prompt='原有人格')
     await owner.on_llm_request(Event(),req)
     state=json.loads(req.system_prompt.split('[自主成长实际能力]\n',1)[1].splitlines()[0])
-    assert not state['knowledge']['ready'] and not state['knowledge']['embedding_available']
-    assert state['pending_tasks']==[] and '不能声称已经入库' in req.system_prompt
+    assert state['knowledge']['ready'] and state['knowledge']['type']=='local_wiki' and state['knowledge']['ai_access']=='read_only'
+    assert state['pending_tasks']==[] and '资料不可自主改写' in req.system_prompt
     assert '[统一功能目录' in req.system_prompt and 'registered_reference_only' not in req.system_prompt
     other=ProviderRequest(prompt='资料',system_prompt='初小晴人格')
     await owner.on_llm_request(Event('chuxiaoqing','2510093206','1207862759'),other)
@@ -154,4 +154,30 @@ async def test_capability_catalog_uses_real_dispatcher_and_keeps_secondary_bot_d
     ctx.context.event=Event('chuxiaoqing','2510093206','1207862759')
     denied=[r async for r in FunctionToolExecutor.execute(tool=tool,run_context=ctx,operation='capabilities',arguments={'section':'plugins'})]
     assert not json.loads(denied[0].content[0].text)['ok']
+    owner.store.close()
+
+@pytest.mark.asyncio
+async def test_wiki_read_and_proposal_use_real_dispatcher_without_model_approval_or_direct_write(tmp_path):
+    from astrbot_plugin_autonomous_development.knowledge import Knowledge
+    owner=AutonomousDevelopment.__new__(AutonomousDevelopment)
+    owner.store=Store(tmp_path/'wiki-dispatch.sqlite3')
+    companion=S(_primary_persona_id=lambda:'小小情');memory=S(service=object())
+    owner.context=S(get_all_stars=lambda:[S(name='astrbot_plugin_private_companion',activated=True,star_cls=companion),S(name='astrbot_plugin_memory_companion',activated=True,star_cls=memory)],
+        get_config=lambda **kw:{'provider_settings':{}},conversation_manager=S(get_curr_conversation_id=AsyncMock(return_value=None)),
+        persona_manager=S(resolve_selected_persona=AsyncMock(return_value=('小小情',object(),None))))
+    owner.knowledge=Knowledge(owner.context,owner.store);wiki=owner.knowledge.wiki
+    topic=wiki.topic_create('dashboard:admin','固定资料')['id'];doc=wiki.save('dashboard:admin',topic,'确认设定','这是人工维护的固定内容')['id']
+    tool=FunctionTool(name='autonomous_growth',description='test',parameters={},handler=owner.growth_tool)
+    ctx=S(context=S(event=Event()),tool_call_timeout=30)
+    async def execute(op,args):
+        values=[v async for v in FunctionToolExecutor.execute(tool=tool,run_context=ctx,operation=op,arguments=args)]
+        return json.loads(values[0].content[0].text)
+    assert (await execute('wiki_read',{'doc_id':doc}))['data']['body']=='这是人工维护的固定内容'
+    proposal=await execute('wiki_propose',{'doc_id':doc,'title':'确认设定','body':'建议修改，待人工批准','expected_revision':1,'reason':'核对资料'})
+    assert proposal['ok'] and not proposal['data']['applied']
+    assert not (await execute('wiki_decide',{'id':proposal['data']['id'],'decision':'approved'}))['ok']
+    assert not (await execute('knowledge_save',{'kb_id':topic,'text':'不允许直接写入'}))['ok']
+    assert wiki.document(doc)['revision']==1
+    ctx.context.event=Event('chuxiaoqing','2510093206','1207862759')
+    assert not (await execute('wiki_read',{'doc_id':doc}))['ok']
     owner.store.close()

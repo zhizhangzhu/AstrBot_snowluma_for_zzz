@@ -75,6 +75,9 @@ class CapabilityAwareness:
                    'execution_requires': '当轮工具权限及后台活动适配'} for s in inventory.get('executable_skills', [])]
         sources = [{'name': label(s.get('name') or s.get('title')), 'id': label(s.get('id') or s.get('source_id'))}
                    for s in inventory.get('knowledge_sources', [])]
+        if self.knowledge is not None and getattr(self.knowledge, 'wiki', None) is not None:
+            sources.extend({'id':t['id'],'name':label(t['name']),'kind':'local_wiki_topic','documents':t['documents'],'access':'read_only'}
+                           for t in read('wiki_topics', lambda:self.knowledge.wiki.topics(identity), []))
         controls = read('configuration_controls', lambda: self.configuration.catalogue() if self.configuration else {}, {})
         controls = [{'key': label(k), 'locked': v.get('locked') is True} for k, v in controls.items()]
         desktop, desktop_tools = read('desktop', self.desktop, ({'status': 'unverified'}, []))

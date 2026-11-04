@@ -14,20 +14,20 @@ function fixture(){
 }
 const usage={totals:{known:2000000,pending:10000,uncertain:0},groups:[],recent:[],remaining_usd:'2497.99',monthly_usd:'2500',account:{status:'unknown'},basis:'API等值估算',period:'2026-11-01',as_of:1793692800};
 const flush=()=>new Promise(r=>setTimeout(r,10));
-function start(data=fixture()){
+function start(data=fixture(), wikiHandler=null){
  const dom=new JSDOM('<div id="root"></div>',{url:'http://localhost/data'});
  Object.assign(globalThis,{window:dom.window,document:dom.window.document,localStorage:dom.window.localStorage});
- const calls=[];window.AstrBotPluginPage={apiPost:async(path,body)=>{calls.push(body);return {status:'ok',data:body.action==='snapshot'?data:body.action==='usage'?usage:{ok:true}}}};
+ const calls=[];window.AstrBotPluginPage={apiPost:async(path,body)=>{calls.push(body);return {status:'ok',data:body.action==='snapshot'?data:body.action==='usage'?usage:body.action.startsWith('wiki_')?(wikiHandler?await wikiHandler(body):body.action==='wiki_list'?{topics:[],items:[],total:0,next_offset:null}:body.action==='wiki_proposals'?[]:{ok:true}):{ok:true}}}};
  const host=document.querySelector('#root');const dispose=mount(host);return {dom,host,calls,dispose};
 }
-test('grants and development mode remain independent, with unavailable embedding explained',async()=>{
+test('grants and development mode remain independent, and Wiki needs no embedding setup',async()=>{
  const {dom,host,calls,dispose}=start();await flush();const root=host.shadowRoot;
  assert.match(root.textContent,/唯一开发 Bot/);const grant=root.querySelector('[data-grant]');assert.equal(grant.checked,true);
  grant.checked=false;grant.dispatchEvent(new window.Event('change'));await flush();
  assert.deepEqual(calls.find(c=>c.action==='activity_grant'),{action:'activity_grant',id:'extension:astrbot_plugin_autonomous_development:learn',enabled:false});
  root.querySelector('[data-tab=settings]').click();const form=root.querySelector('form[data-setting=development]');
  assert.equal(form.querySelector('[name=design_model]').value,'gpt-6.1-sol');assert.equal(form.querySelector('input:disabled').value,'小小情 · 2893214983');
- root.querySelector('[data-tab=knowledge]').click();assert.match(root.textContent,/聊天 OAuth 不包含向量化服务/);assert.equal(root.querySelector('#create-kb button').disabled,true);
+ root.querySelector('[data-tab=knowledge]').click();await flush();assert.match(root.textContent,/人工维护，AI 只读/);assert.equal(root.querySelector('#wiki-new').disabled,true);assert.equal(root.querySelector('#create-kb'),null);
  dispose();dom.window.close();
 });
 test('cost filter survives render and untrusted goal stays escaped',async()=>{
@@ -37,4 +37,28 @@ test('cost filter survives render and untrusted goal stays escaped',async()=>{
  root.querySelector('[data-tab=costs]').click();assert.match(root.textContent,/账户真实余额：未知/);
  root.querySelector('#cost-bot').value='2510093206';root.querySelector('#cost-plugin').value='meme_manager';root.querySelector('[data-do=filter]').click();await flush();
  assert.equal(calls.at(-1).bot,'2510093206');assert.equal(root.querySelector('#cost-bot').value,'2510093206');dispose();dom.window.close();
+});
+
+test('local Wiki supports manual editing and keeps a conflicting draft without executing Markdown HTML',async()=>{
+ const topics=[],docs=[];let conflict=false;
+ const wiki=async body=>{
+  if(body.action==='wiki_list')return {topics,items:docs.map(({body,...r})=>r),total:docs.length,next_offset:null};
+  if(body.action==='wiki_proposals')return [];
+  if(body.action==='wiki_topic_create'){topics.push({id:'topic-one',name:body.name,scope:body.scope,documents:0});return {id:'topic-one'};}
+  if(body.action==='wiki_save'){if(conflict)throw Error('文档版本已变化');const d={...body,id:'doc-one',topic_name:'角色资料',scope:'小小情',revision:1,archived:0,updated:1793692800};docs.splice(0,docs.length,d);topics[0].documents=1;return d;}
+  if(body.action==='wiki_read')return docs[0];
+  throw Error('Unexpected Wiki call '+body.action);
+ };
+ const {dom,host,calls,dispose}=start(fixture(),wiki);await flush();const root=host.shadowRoot;
+ root.querySelector('[data-tab=knowledge]').click();await flush();
+ let form=root.querySelector('#wiki-topic-form');form.querySelector('[name=name]').value='角色资料';form.dispatchEvent(new window.Event('submit',{cancelable:true}));await flush();
+ root.querySelector('#wiki-new').click();form=root.querySelector('#wiki-document-form');
+ form.querySelector('[name=title]').value='人工设定';form.querySelector('[name=body]').value='# 角色资料\n<img src=x onerror=evil()>\n人工确认的内容';
+ form.dispatchEvent(new window.Event('input',{bubbles:true}));form.dispatchEvent(new window.Event('submit',{cancelable:true}));await flush();
+ assert.match(root.querySelector('.wiki-text').textContent,/人工确认/);assert.equal(root.querySelector('.wiki-text img'),null);
+ assert.equal(calls.find(c=>c.action==='wiki_save').expected_revision,0);
+ root.querySelector('#wiki-edit').click();form=root.querySelector('#wiki-document-form');form.querySelector('[name=body]').value='未保存的人工草稿';
+ form.dispatchEvent(new window.Event('input',{bubbles:true}));conflict=true;form.dispatchEvent(new window.Event('submit',{cancelable:true}));await flush();
+ assert.equal(root.querySelector('#wiki-document-form textarea').value,'未保存的人工草稿');assert.match(root.textContent,/文档版本已变化/);
+ assert.ok(!calls.some(c=>c.action==='wiki_decide'));dispose();dom.window.close();
 });

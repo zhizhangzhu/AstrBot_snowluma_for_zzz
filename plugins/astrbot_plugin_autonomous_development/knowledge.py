@@ -10,11 +10,13 @@ from .db import dumps
 from .instrumentation import usage_scope, instrument_provider
 from .instrumentation import ANCHOR
 from .policy import BOT, PERSONA
+from .wiki import Wiki
 
 
 class Knowledge:
     def __init__(self, context, store):
         self.context, self.store = context, store
+        self.wiki = Wiki(store)
         self.bound = []
         self.manager_binding = None
         self.bind_manager()
@@ -106,6 +108,9 @@ class Knowledge:
         return {**defaults, **self.store.setting('knowledge', {})[0]}
 
     def awareness(self):
+        return self.wiki.status()
+
+    def native_awareness(self):
         """Compact live capability state for ordinary replies; no document/body scan."""
         cfg = self.config()
         providers = {p.meta().id for p in getattr(self.context, 'get_all_embedding_providers', lambda: [])()}
@@ -120,17 +125,24 @@ class Knowledge:
                 'writable_kb_ids':cfg['writable_kbs']}
 
     def readiness(self):
-        state = self.awareness()
-        return state['ready'], state['reason']
+        return False, '知识库改为人工维护Wiki；AI仅可查询或提交待审建议，不自主入库'
 
     async def status(self):
         cfg = self.config()
         manager = getattr(self.context, 'kb_manager', None)
-        bases = await manager.list_kbs() if manager else []
-        providers = self.context.get_all_embedding_providers()
+        try:
+            bases = await manager.list_kbs() if manager else []
+            providers = getattr(self.context, 'get_all_embedding_providers', lambda:[])()
+        except Exception:
+            bases, providers = [], []  # Legacy vector support must not block the local wiki.
+        try:
+            native = self.native_awareness()
+        except Exception:
+            native = {'ready':False,'reason':'原生向量库暂不可用，不影响本地Wiki'}
         return {'config': cfg, 'bases': [b.model_dump() if hasattr(b, 'model_dump') else dict(b) for b in bases],
             'embedding_providers': [{'id': p.meta().id, 'model': p.get_model()} for p in providers],
-            'ready': self.readiness()[0], 'reason': self.readiness()[1],
+            'ready': True, 'reason': self.wiki.status()['reason'], 'wiki': self.wiki.status(),
+            'native': native,
             'owned_kbs': self.store.setting('owned_kbs', [])[0],
             'documents': self.store.rows('SELECT id,kb,url,digest,created,updated,state FROM documents WHERE scope=? ORDER BY updated DESC LIMIT 100', (BOT + ':' + PERSONA,))}
 

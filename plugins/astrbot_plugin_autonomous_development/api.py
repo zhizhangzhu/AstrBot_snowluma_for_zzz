@@ -97,6 +97,19 @@ class Administration:
         p, identity = self.p, self.identity
         if action == 'capabilities':
             return p.awareness.query(identity, **{k:data[k] for k in ('section','offset','limit','query') if k in data})
+        if action.startswith('wiki_'):
+            wiki = p.knowledge.wiki
+            if action == 'wiki_list': return wiki.listing(None, **{k:data[k] for k in ('topic','offset','limit','archived') if k in data})
+            if action == 'wiki_read': return wiki.document(data['doc_id'], include_archived=True)
+            if action == 'wiki_topic_create': return wiki.topic_create(actor, data['name'], data.get('scope', PERSONA))
+            if action == 'wiki_save': return wiki.save(actor, **{k:data[k] for k in ('topic','title','body','doc_id','expected_revision') if k in data})
+            if action == 'wiki_archive': return wiki.archive(actor, data['doc_id'], data['expected_revision'], data.get('archived',True))
+            if action == 'wiki_history': return wiki.history(actor, data['doc_id'])
+            if action == 'wiki_version': return wiki.version(actor, data['doc_id'], data['revision'])
+            if action == 'wiki_proposals': return wiki.proposals(actor)
+            if action == 'wiki_decide': return wiki.decide(actor, data['id'], data['decision'])
+            if action == 'wiki_search': return wiki.search(None, data['query'])
+            raise ValueError('未知Wiki操作')
         if action == 'snapshot': return await self.snapshot()
         if action == 'usage':
             return p.ledger.summary(data.get('days', 30), str(data.get('plugin', '')), str(data.get('bot', '')), str(data.get('model', '')))
@@ -215,7 +228,7 @@ class Administration:
             if request.method == 'GET':
                 data = {k: v for k, v in request.query.items()}
                 action = data.pop('action', 'snapshot')
-                if action not in ('snapshot', 'usage', 'capabilities'): raise PermissionError('只读请求不能执行变更')
+                if action not in ('snapshot', 'usage', 'capabilities', 'wiki_list', 'wiki_read', 'wiki_history', 'wiki_version', 'wiki_proposals', 'wiki_search'): raise PermissionError('只读请求不能执行变更')
             else:
                 body = await request.body()
                 if len(body) > 250_000: raise ValueError('请求过大')

@@ -28,6 +28,16 @@ class Agent:
         self.identity = owner_identity()
         self.awareness = awareness or CapabilityAwareness(context, store)
 
+    def reference(self, action):
+        op = action.get('action')
+        if op == 'capabilities':
+            return self.awareness.query(self.identity, **{k:action[k] for k in ('section','offset','limit','query') if k in action})
+        wiki = self.awareness.knowledge.wiki
+        if op == 'wiki_search':return wiki.search(self.identity, action['query'])
+        if op == 'wiki_read':return wiki.read(self.identity, **{k:action[k] for k in ('doc_id','offset','limit') if k in action})
+        if op == 'wiki_list':return wiki.listing(self.identity, **{k:action[k] for k in ('topic','offset','limit') if k in action})
+        raise ValueError('未知只读查询')
+
     async def call(self, task_id, prompt, stage='design'):
         dependencies(self.context)
         cfg = self.tasks.mode()
@@ -90,13 +100,14 @@ class Agent:
                     '涉及公共核心、权限、路由、记忆或发布为重大改动。不能读写data、凭据或项目外文件。'
                     '需要了解现有功能细节时先输出{action:"capabilities",section:"features",query:"关键词",offset:0,limit:30}，'
                     '下一轮会带查询结果继续设计；也可查询activities/tools/skills/desktop_tools等目录。'
+                    '本地Wiki可以通过action=wiki_list、wiki_search(query)、wiki_read(doc_id,offset,limit)查询，不得修改资料。'
                     '已运行插件的受控源码在vendor/installed-plugins，不能修改data里的运行副本。\n目标：'+row['goal']
                     + '\n此前能力查询：' + json.dumps(payload.get('design_queries', [])[-4:], ensure_ascii=False)
                     + '\n真实源码目录：' + json.dumps(inventories, ensure_ascii=False)[:110000])
-                if plan.get('action') == 'capabilities':
+                if plan.get('action') in ('capabilities','wiki_list','wiki_search','wiki_read'):
                     queries = list(payload.get('design_queries', []))
                     if len(queries) >= 8:raise ValueError('方案阶段能力查询已达上限，请收束方案')
-                    result = self.awareness.query(identity, **{k:plan[k] for k in ('section','offset','limit','query') if k in plan})
+                    result = self.reference(plan)
                     queries.append(result)
                     return self.tasks.update(identity, task_id, state='proposed', payload={**payload, 'design_queries': queries}, expected=row['revision'])
                 repository = plan.get('repository', 'parent')
@@ -124,7 +135,8 @@ class Agent:
                     '在隔离工作区逐步实现方案。本轮仅选择一步，输出JSON：'
                     '{action:"read",path:"...",start_line:1,limit_lines:200}、{action:"write",files:{"路径":"完整文本"}}、'
                     '{action:"run",argv:["/usr/bin/python3", "..."],timeout:60}、{action:"research",url:"https://..."}、'
-                    '{action:"capabilities",section:"features",offset:0,limit:30,query:"关键字"}或{action:"finish"}。'
+                    '{action:"capabilities",section:"features",offset:0,limit:30,query:"关键字"}、'
+                    '{action:"wiki_search",query:"关键词"}、{action:"wiki_read",doc_id:"文档ID"}、{action:"wiki_list"}或{action:"finish"}。'
                     '仅修改paths中列出的文件，缺少上下文先read。大文件可按行读取，然后用run中的Python脚本做精确的小范围替换。检查须验证功能和失败路径，不得伪造。\n'
                     + json.dumps({'goal': row['goal'], 'plan': plan, 'history': payload['history'][-6:]}, ensure_ascii=False), 'development')
                 # Re-read authorization and cancellation after the model finishes.
@@ -140,8 +152,8 @@ class Agent:
                         payload['steps'] = steps + 1
                         return self.tasks.update(identity, task_id, state='running', payload=payload)
                     return self.tasks.evidence(identity, task_id, evidence)
-                if op == 'capabilities':
-                    result = self.awareness.query(identity, **{k:action[k] for k in ('section','offset','limit','query') if k in action})
+                if op in ('capabilities','wiki_list','wiki_search','wiki_read'):
+                    result = self.reference(action)
                 elif op == 'read':
                     result = await self.worker.call(identity, task_id, 'read', path=action['path'],start_line=int(action.get('start_line',1)),limit_lines=int(action.get('limit_lines',200)))
                 elif op == 'write':
