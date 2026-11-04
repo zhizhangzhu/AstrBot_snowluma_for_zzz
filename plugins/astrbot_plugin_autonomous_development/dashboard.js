@@ -16,7 +16,13 @@ export function installDashboard({document, window, mountView = mount}) {
             if (path === '/alkaid/knowledge-base') {a.hidden=true;continue;}
             if (path !== '/knowledge-base') continue;
             const title = a.querySelector('.v-list-item-title');
-            if (title && title.textContent !== '本地资料 Wiki') title.textContent = '本地资料 Wiki';
+            if (title) {
+                // Keep Vue-owned span/icon nodes intact while updating their text.
+                const walker=document.createTreeWalker(title,window.NodeFilter.SHOW_TEXT);
+                for(let node=walker.nextNode();node;node=walker.nextNode()) {
+                    if (['知识库','Knowledge Base','KnowledgeBase'].includes(node.data.trim())) node.data=node.data.replace(node.data.trim(),'本地资料 Wiki');
+                }
+            }
             if (a.getAttribute('aria-label') !== '本地资料 Wiki') a.setAttribute('aria-label','本地资料 Wiki');
         }
         const path = route(), main = document.querySelector('.v-main');
@@ -29,7 +35,7 @@ export function installDashboard({document, window, mountView = mount}) {
             wikiHost = document.createElement('section');wikiHost.id = 'evolution-reference-wiki';
             main.append(wikiHost);wikiDispose = mountView(wikiHost,{view:'wiki'});
         }
-        const showCosts = path === '/data';
+        const showCosts = path === '/data' || path === '/data/statistics';
         if (costHost && (!showCosts || !costHost.isConnected)) {
             costDispose?.();costHost.remove();costHost = costDispose = null;
         }

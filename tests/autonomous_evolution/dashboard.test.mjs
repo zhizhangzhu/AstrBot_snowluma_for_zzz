@@ -39,3 +39,14 @@ test('late native render and replaced main container mount the correct view with
 test('legacy knowledge bookmarks also show Wiki instead of the old interface',()=>{
  const s=setup('http://localhost/#/alkaid/knowledge-base');assert.deepEqual(s.calls,['wiki']);assert.ok(s.document.documentElement.hasAttribute('data-local-wiki'));s.dispose();s.dom.window.close();
 });
+
+test('renaming the entry preserves framework-owned nested title nodes',()=>{
+ const s=setup('http://localhost/#/welcome');s.dispose();
+ const title=s.document.querySelector('.v-list-item-title');title.innerHTML='<span data-native-title>知识库</span>';const original=title.firstElementChild;
+ const stop=installDashboard({document:s.document,window:s.dom.window,mountView:()=>()=>{}});
+ assert.equal(title.firstElementChild,original);assert.equal(original.textContent,'本地资料 Wiki');stop();s.dom.window.close();
+});
+
+test('native data statistics redirect retains the cost section',()=>{
+ const s=setup('http://localhost/#/data/statistics');assert.deepEqual(s.calls,['costs']);assert.ok(s.document.querySelector('#evolution-costs'));s.dispose();s.dom.window.close();
+});
