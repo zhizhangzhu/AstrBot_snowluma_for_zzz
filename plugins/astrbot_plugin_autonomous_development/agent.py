@@ -33,9 +33,9 @@ class Agent:
         if op == 'capabilities':
             return self.awareness.query(self.identity, **{k:action[k] for k in ('section','offset','limit','query') if k in action})
         wiki = self.awareness.knowledge.wiki
-        if op == 'wiki_search':return wiki.search(self.identity, action['query'])
+        if op == 'wiki_search':return wiki.search(self.identity, action['query'], **{k:action[k] for k in ('library','topic') if k in action})
         if op == 'wiki_read':return wiki.read(self.identity, **{k:action[k] for k in ('doc_id','offset','limit') if k in action})
-        if op == 'wiki_list':return wiki.listing(self.identity, **{k:action[k] for k in ('topic','offset','limit') if k in action})
+        if op == 'wiki_list':return wiki.listing(self.identity, **{k:action[k] for k in ('library','topic','offset','limit') if k in action})
         raise ValueError('未知只读查询')
 
     async def call(self, task_id, prompt, stage='design'):

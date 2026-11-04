@@ -181,3 +181,38 @@ async def test_wiki_read_and_proposal_use_real_dispatcher_without_model_approval
     ctx.context.event=Event('chuxiaoqing','2510093206','1207862759')
     assert not (await execute('wiki_read',{'doc_id':doc}))['ok']
     owner.store.close()
+
+@pytest.mark.asyncio
+async def test_readonly_wiki_tool_honors_both_bot_acls_without_granting_secondary_development(tmp_path):
+    from astrbot_plugin_autonomous_development.knowledge import Knowledge
+    from astrbot.api.provider import ProviderRequest
+    owner=AutonomousDevelopment.__new__(AutonomousDevelopment)
+    owner.store=Store(tmp_path/'dual-wiki.sqlite3')
+    async def resolve(**kwargs):
+        return ('初小晴' if kwargs['umo'].startswith('chuxiaoqing:') else '小小情',object(),None)
+    owner.context=S(get_all_stars=lambda:[],get_config=lambda **kw:{'provider_settings':{}},
+        conversation_manager=S(get_curr_conversation_id=AsyncMock(return_value=None)),
+        persona_manager=S(resolve_selected_persona=resolve))
+    owner.knowledge=Knowledge(owner.context,owner.store);wiki=owner.knowledge.wiki
+    library=wiki.library_create('dashboard:admin','授权测试',['2893214983','2510093206'])['id']
+    main=wiki.topic_create('dashboard:admin','小小情资料',library=library,readers=['2893214983'])['id']
+    secondary=wiki.topic_create('dashboard:admin','初小晴资料',library=library,readers=['2510093206'])['id']
+    main_doc=wiki.save('dashboard:admin',main,'主Bot秘密','只有小小情可以读到的正文')['id']
+    secondary_doc=wiki.save('dashboard:admin',secondary,'初小晴设定','已授权初小晴读取的正文')['id']
+    tool=FunctionTool(name='local_wiki',description='read only',parameters={},handler=owner.wiki_tool)
+    event=Event('chuxiaoqing','2510093206','1207862759');ctx=S(context=S(event=event),tool_call_timeout=30)
+    async def execute(op,args):
+        rows=[r async for r in FunctionToolExecutor.execute(tool=tool,run_context=ctx,operation=op,arguments=args)]
+        return json.loads(rows[0].content[0].text)
+    assert (await execute('read',{'doc_id':secondary_doc}))['data']['body']=='已授权初小晴读取的正文'
+    denied=await execute('read',{'doc_id':main_doc,'bot':'2893214983'})
+    assert not denied['ok'] and '只有小小情' not in str(denied)
+    assert not (await execute('save',{'doc_id':secondary_doc,'body':'不能直接保存'}))['ok']
+    req=ProviderRequest(prompt='查资料',system_prompt='初小晴人格');await owner.wiki_context(event,req)
+    assert '本地资料Wiki' in req.system_prompt and '自主成长实际能力' not in req.system_prompt
+    wiki.access_update('dashboard:admin','library',library,'授权测试',['2893214983'],1)
+    assert not (await execute('read',{'doc_id':secondary_doc}))['ok']
+    assert (await execute('list',{}))['data']['total']==0
+    event.binding=object()
+    assert not (await execute('read',{'doc_id':main_doc}))['ok']
+    owner.store.close()

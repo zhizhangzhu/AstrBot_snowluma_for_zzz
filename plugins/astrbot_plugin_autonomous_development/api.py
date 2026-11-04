@@ -99,16 +99,18 @@ class Administration:
             return p.awareness.query(identity, **{k:data[k] for k in ('section','offset','limit','query') if k in data})
         if action.startswith('wiki_'):
             wiki = p.knowledge.wiki
-            if action == 'wiki_list': return wiki.listing(None, **{k:data[k] for k in ('topic','offset','limit','archived') if k in data})
+            if action == 'wiki_list': return wiki.listing(None, **{k:data[k] for k in ('topic','offset','limit','archived','library') if k in data})
             if action == 'wiki_read': return wiki.document(data['doc_id'], include_archived=True)
-            if action == 'wiki_topic_create': return wiki.topic_create(actor, data['name'], data.get('scope', PERSONA))
+            if action == 'wiki_library_create': return wiki.library_create(actor, data['name'], data.get('readers'))
+            if action == 'wiki_access_update': return wiki.access_update(actor, **{k:data[k] for k in ('kind','id','name','readers','expected_revision') if k in data})
+            if action == 'wiki_topic_create': return wiki.topic_create(actor, **{k:data[k] for k in ('name','scope','library','readers') if k in data})
             if action == 'wiki_save': return wiki.save(actor, **{k:data[k] for k in ('topic','title','body','doc_id','expected_revision') if k in data})
             if action == 'wiki_archive': return wiki.archive(actor, data['doc_id'], data['expected_revision'], data.get('archived',True))
             if action == 'wiki_history': return wiki.history(actor, data['doc_id'])
             if action == 'wiki_version': return wiki.version(actor, data['doc_id'], data['revision'])
             if action == 'wiki_proposals': return wiki.proposals(actor)
             if action == 'wiki_decide': return wiki.decide(actor, data['id'], data['decision'])
-            if action == 'wiki_search': return wiki.search(None, data['query'])
+            if action == 'wiki_search': return wiki.search(None, data['query'], **{k:data[k] for k in ('library','topic') if k in data})
             raise ValueError('未知Wiki操作')
         if action == 'snapshot': return await self.snapshot()
         if action == 'usage':

@@ -65,3 +65,28 @@ async def event_identity(context, event):
 
 def owner_identity():
     return Identity(BOT, PERSONA, USER, PLATFORM)
+
+
+async def wiki_event_identity(context, event):
+    """Read-only Bot identity; deliberately does not grant development rights."""
+    from .wiki import BOTS
+    bot, user = str(event.get_self_id()), str(event.get_sender_id())
+    origin = str(event.unified_msg_origin);platform = origin.split(':', 1)[0]
+    entry = BOTS.get(bot)
+    if entry is None or platform != entry['platform'] or not user:
+        raise PermissionError('未登记的Wiki读取Bot')
+    manager = context.conversation_manager
+    cid = await manager.get_curr_conversation_id(origin)
+    conv = await manager.get_conversation(origin, cid) if cid else None
+    config = context.get_config(umo=origin)
+    selected = await context.persona_manager.resolve_selected_persona(umo=origin,
+        conversation_persona_id=getattr(conv, 'persona_id', None), platform_name='aiocqhttp',
+        provider_settings=config.get('provider_settings', {}))
+    if selected[0] != entry['name'] or selected[1] is None:
+        raise PermissionError('当前人格与Wiki读取Bot不匹配')
+    if getattr(event, 'binding', None) is not None:
+        desktop = installed(context, 'astrbot_plugin_desktop_pet')
+        binding = await desktop.authorized_binding(event) if desktop else None
+        if binding is None or not desktop.store.enabled(binding) or (binding.bot_id,binding.persona_id,binding.user_id,binding.qq_platform_id) != (bot,entry['name'],user,platform):
+            raise PermissionError('桌宠设备未验证或已撤销')
+    return Identity(bot,entry['name'],user,platform,not bool(event.get_group_id()))

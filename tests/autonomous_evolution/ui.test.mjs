@@ -40,11 +40,11 @@ test('cost filter survives render and untrusted goal stays escaped',async()=>{
 });
 
 test('local Wiki supports manual editing and keeps a conflicting draft without executing Markdown HTML',async()=>{
- const topics=[],docs=[];let conflict=false;
+ const topics=[],docs=[],libraries=[{id:'library-one',name:'固定资料',readers:['2893214983'],revision:1}];let conflict=false;
  const wiki=async body=>{
-  if(body.action==='wiki_list')return {topics,items:docs.map(({body,...r})=>r),total:docs.length,next_offset:null};
+  if(body.action==='wiki_list')return {libraries,topics,items:docs.map(({body,...r})=>r),total:docs.length,next_offset:null};
   if(body.action==='wiki_proposals')return [];
-  if(body.action==='wiki_topic_create'){topics.push({id:'topic-one',name:body.name,scope:body.scope,documents:0});return {id:'topic-one'};}
+  if(body.action==='wiki_topic_create'){topics.push({id:'topic-one',library:body.library,name:body.name,readers:body.readers,effective_readers:body.readers,library_readers:libraries[0].readers,revision:1,documents:0});return {id:'topic-one'};}
   if(body.action==='wiki_save'){if(conflict)throw Error('文档版本已变化');const d={...body,id:'doc-one',topic_name:'角色资料',scope:'小小情',revision:1,archived:0,updated:1793692800};docs.splice(0,docs.length,d);topics[0].documents=1;return d;}
   if(body.action==='wiki_read')return docs[0];
   throw Error('Unexpected Wiki call '+body.action);
@@ -67,5 +67,27 @@ test('standalone Wiki opens directly without engineering tabs or cost requests',
  const {dom,host,calls,dispose}=start(fixture(),null,'wiki');await flush();const root=host.shadowRoot;
  assert.equal(root.querySelector('h1').textContent,'资料 Wiki');assert.equal(root.querySelector('nav'),null);
  assert.ok(root.querySelector('#wiki-topic-form'));assert.ok(!calls.some(c=>c.action==='usage'));
+ dispose();dom.window.close();
+});
+
+test('Wiki exposes independent library and topic Bot permissions with revision checks',async()=>{
+ const libraries=[{id:'lib',name:'资料库',readers:['2893214983'],revision:3}];
+ const topics=[{id:'topic',name:'角色',library:'lib',readers:['2893214983'],effective_readers:['2893214983'],library_readers:libraries[0].readers,revision:2,documents:0}];
+ const wiki=async body=>{
+  if(body.action==='wiki_list')return {libraries,topics,items:[],total:0,next_offset:null};
+  if(body.action==='wiki_proposals')return [];
+  if(body.action==='wiki_access_update'){
+   const target=body.kind==='library'?libraries[0]:topics[0];target.readers=body.readers;target.revision++;
+   topics[0].library_readers=libraries[0].readers;topics[0].effective_readers=topics[0].readers.filter(id=>libraries[0].readers.includes(id));return {ok:true};
+  }throw Error('Unexpected action');
+ };
+ const {dom,host,calls,dispose}=start(fixture(),wiki,'wiki');await flush();let root=host.shadowRoot;
+ root.querySelector('[data-w-topic=topic]').click();await flush();
+ let form=root.querySelector('[data-w-access=topic]');assert.equal(form.querySelector('[value="2510093206"]').disabled,true);
+ form=root.querySelector('[data-w-access=library]');form.querySelector('[value="2510093206"]').checked=true;
+ form.dispatchEvent(new window.Event('submit',{cancelable:true}));await flush();
+ const update=calls.find(c=>c.action==='wiki_access_update');assert.equal(update.kind,'library');assert.equal(update.expected_revision,3);assert.deepEqual(update.readers,['2893214983','2510093206']);
+ form=root.querySelector('[data-w-access=topic]');assert.equal(form.querySelector('[value="2510093206"]').disabled,false);assert.equal(form.querySelector('[value="2510093206"]').checked,false);
+ assert.equal(root.querySelector('#wiki-library-form [value="2510093206"]').checked,false);
  dispose();dom.window.close();
 });
