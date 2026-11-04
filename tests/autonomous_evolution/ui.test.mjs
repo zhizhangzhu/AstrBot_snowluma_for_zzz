@@ -14,11 +14,11 @@ function fixture(){
 }
 const usage={totals:{known:2000000,pending:10000,uncertain:0},groups:[],recent:[],remaining_usd:'2497.99',monthly_usd:'2500',account:{status:'unknown'},basis:'API等值估算',period:'2026-11-01',as_of:1793692800};
 const flush=()=>new Promise(r=>setTimeout(r,10));
-function start(data=fixture(), wikiHandler=null){
+function start(data=fixture(), wikiHandler=null, view='growth'){
  const dom=new JSDOM('<div id="root"></div>',{url:'http://localhost/data'});
  Object.assign(globalThis,{window:dom.window,document:dom.window.document,localStorage:dom.window.localStorage});
  const calls=[];window.AstrBotPluginPage={apiPost:async(path,body)=>{calls.push(body);return {status:'ok',data:body.action==='snapshot'?data:body.action==='usage'?usage:body.action.startsWith('wiki_')?(wikiHandler?await wikiHandler(body):body.action==='wiki_list'?{topics:[],items:[],total:0,next_offset:null}:body.action==='wiki_proposals'?[]:{ok:true}):{ok:true}}}};
- const host=document.querySelector('#root');const dispose=mount(host);return {dom,host,calls,dispose};
+ const host=document.querySelector('#root');const dispose=mount(host,{view});return {dom,host,calls,dispose};
 }
 test('grants and development mode remain independent, and Wiki needs no embedding setup',async()=>{
  const {dom,host,calls,dispose}=start();await flush();const root=host.shadowRoot;
@@ -61,4 +61,11 @@ test('local Wiki supports manual editing and keeps a conflicting draft without e
  form.dispatchEvent(new window.Event('input',{bubbles:true}));conflict=true;form.dispatchEvent(new window.Event('submit',{cancelable:true}));await flush();
  assert.equal(root.querySelector('#wiki-document-form textarea').value,'未保存的人工草稿');assert.match(root.textContent,/文档版本已变化/);
  assert.ok(!calls.some(c=>c.action==='wiki_decide'));dispose();dom.window.close();
+});
+
+test('standalone Wiki opens directly without engineering tabs or cost requests',async()=>{
+ const {dom,host,calls,dispose}=start(fixture(),null,'wiki');await flush();const root=host.shadowRoot;
+ assert.equal(root.querySelector('h1').textContent,'资料 Wiki');assert.equal(root.querySelector('nav'),null);
+ assert.ok(root.querySelector('#wiki-topic-form'));assert.ok(!calls.some(c=>c.action==='usage'));
+ dispose();dom.window.close();
 });
