@@ -42,7 +42,7 @@
 
 公开调研通过独立的有界读取入口。普通直连不可用时仅接受本项目已经使用的固定网关 `proxy.esl.cisco.com:80`；连接和 CONNECT 的目标仍为已验证的公网 IP，TLS 验证原始域名。`trust_env` 保持关闭；不采用任意环境代理，不访问回环、内网、Unix 服务，不转发 QQ 号、聊天、会话 Cookie 或项目密钥。每次跳转重新校验。
 
-用户随后明确授权“可以，请你都上线吧，都放到生产服务”，现有受限发布器已启动，生产覆盖层已启用。开机自启的 root 系统服务安装被自动审批单独拒绝，理由是其开机持久化影响需要明确授权；**该系统服务没有安装或启用**。当前发布器可持续运行，但宿主机重启后需通过项目启动入口恢复，不能声称已具备开机自恢复。模板位于 `deploy/systemd/astrbot-evolution-publisher.service`，尚待确认。网络部分未采用放宽代理限制的改动；固定网关替代实现已通过检查。
+用户明确授权生产上线，随后同意将受限发布器注册为 root 系统服务，要求跟随 AstrBot 项目启停、异常退出后自动重启，不独立开机启动。已通过 `systemctl link` 注册 `deploy/systemd/astrbot-evolution-publisher.service` 并启动；没有执行 enable，模板没有 Install/启动目标，WantedBy 为空。`start.sh` 启动项目时启动发布器，`stop.sh` 先结束发布器的在途操作，再最终停止 AstrBot 和 QQ，避免发布操作反向拉起已停止的服务。发布器执行自身 AstrBot 更新时保持独立运行。网络部分采用已验证的固定网关读取实现。
 
 ## 可复现检查
 
@@ -50,7 +50,7 @@
 
 | 检查 | 结果 | 说明 |
 | --- | --- | --- |
-| 真实 AstrBot 镜像：自主成长套件 | 46 passed，10 deselected | deselected 为宿主容器/命名空间测试，另行在宿主执行 |
+| 真实 AstrBot 镜像：自主成长套件 | 49 passed，11 deselected | deselected 为宿主容器/命名空间测试，另行在宿主执行 |
 | 真实 AstrBot 镜像：桌宠服务端 | 66 passed，1 skipped | 镜像内没有客户端依赖；对应 WSS 检查另行运行 |
 | 真实 AstrBot 镜像：对话与媒体认知 | 7 passed | 保留图片语义及当前事件投递 |
 | 真实 AstrBot 镜像：发送与热重载 | 7 passed | 包含两个 Bot 普通回复、在途热重载及随后同会话继续聊天 |
@@ -116,13 +116,32 @@ runtime/desktop-pet-development/toolchain/node-v24.11.0-linux-x64/bin/node --tes
 | 管理鉴权 | 匿名管理请求返回 401；登录后新页面快照、费用和权限读取正常 |
 | UI 数据 | 使用实际生产快照在 DOM 中验证配置、知识、费用、任务、开发设置五个视图；这不等同 Windows 桌面截图验收 |
 | 桌宠通路 | 原插件仍启用，原 CA 验证的 6190 TLS 端点正常，未认证连接被 401 拒绝；本轮未安装新 Windows 版本 |
-| 持久系统服务 | 模板通过 systemd 静态校验；安装／开机启用被自动审批拒绝，现有发布器仍在运行 |
+| 发布器系统服务 | 已注册并运行：root、Restart=on-failure、NoNewPrivileges=yes、UMask=0077；无独立开机启动目标；实际异常退出后自动恢复通过 |
 
 上线检查发现 OAuth Responses 可能返回 `text/plain` 标记的 SSE，旧账本因此无法解析用量。修复后兼容该格式、JSON 事件封套和压缩流；8 项用量专项检查及最新 46 项框架套件均通过。真实内部请求已记录输入 13、输出 6 Tokens。最初修复前的一条请求仍保留“未知用量及保守预占”，没有伪造回填为零。这里的金额始终是 API 等值估算，不是已核实的 OAuth 扣款或账户余额。
 
 原有配置的部署差异仅涉及 `real_schedule_allowed_extensions` 及其 `real_schedule_config` 映射。测试设计任务已保留取消／拒绝审计记录；未被批准的方案没有进入执行阶段。
 
 私有证据索引位于 `.runtime/evolution-production-current` 指向的目录，包含上线前快照、人格状态、最终费用／管理快照、只读设计与实际发布器检查记录；不纳入 Git。
+
+## 知识库能力认知及服务托管核验（2026-11-04）
+
+普通聊天的模型请求现在附带实时知识能力状态：维护开关、实际可用向量服务、所选可读／可写库，以及未就绪原因；初小晴请求不会注入小小情的能力状态。模型可使用 `autonomous_growth` 的 `knowledge_search`、`knowledge_save`、`research` 操作。已取消和终结的开发目标不再作为待办提示。
+
+生产快照确认：维护开关开启，Embedding 提供商 0 个，现有知识库 0 个，知识入库 ready=false，原因同时包括缺少向量化服务和可写库。这意味着功能已经实现，但当前不能声称自主入库已在自然日程中发生。读取公开资料可形成候选；真正写入须通过来源正文核对、长期价值判断、去重、授权和日限额，再由原生知识库切分／索引，并检索回查确认。聊天记忆不等于该资料库。
+
+配置顺序：
+
+1. 在 AstrBot“模型提供商 → 嵌入”配置实际可用的 Embedding 服务；费用治理中补充对应模型价格，不能以未知单价绕过预算。
+2. 在“自主成长 → 知识”选择服务，创建“小小情学习库”；此入口会登记小小情的读写及归属范围，默认不向初小晴共享。
+3. 保持知识维护及陪伴日程中的知识维护活动许可开启，按需设置来源、主题和每日文档上限。已有公共资料库也可明确选为可读库；不要据此共享私人聊天。
+4. 上传少量实际资料并验证检索，再观察自然日程回执。标准知识库导入支持 Markdown、TXT、PDF 等；向量模型改变时需依据原文重建索引。
+
+资料来源可以从项目说明及 [AstrBot 官方文档](https://docs.astrbot.app/)开始。通用资料可参考 [Wikimedia 中文维基数据集](https://huggingface.co/datasets/wikimedia/wikipedia/tree/main/20231101.zh)，但其格式为 Parquet，需要按主题选取并转换为原文文档，不能当作现成 AstrBot 向量库直接导入；不建议第一轮全量导入。模型分工和原生导入步骤见 [官方知识库说明](https://docs.astrbot.app/use/knowledge-base.html)。
+
+本次生产验证还覆盖了严格 UMask=0077 下的源码副本归属兼容：保持全局私有权限，仅使任务源码归属实际工程 UID，新文件／目录分别使用 0600／0700，私有元数据不放宽。真实 systemd 发布器完成源码准备、新目录写入、Docker 执行、干净副本检查和独立任务分支的本地提交，未上传、未部署测试产物，人工当前分支不变。真实工程容器专项 5 项通过，框架自主成长 49 项、桌宠 66 项、对话媒体 7 项、发送热重载 7 项通过。
+
+实际终止发布器主进程后，systemd 自动恢复，NRestarts=1；AstrBot 与两个 QQ 容器 ID 和启动时间均未变化。临时维护已恢复为 false。私人证据位于 `.runtime/evolution-systemd-{handover,proof,final}.local.json` 和 `.runtime/evolution-knowledge-awareness.local.json`，不纳入 Git。
 
 ## 尚未完成及明确限制
 

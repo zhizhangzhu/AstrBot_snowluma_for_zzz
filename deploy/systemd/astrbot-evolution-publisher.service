@@ -2,6 +2,7 @@
 Description=AstrBot restricted autonomous development publisher
 Requires=docker.service
 After=docker.service
+ConditionPathExists=/home/yingjxu/workspace/astrbot-snowluma/.runtime/evolution.enabled
 StartLimitIntervalSec=120
 StartLimitBurst=5
 
@@ -23,5 +24,4 @@ UMask=0077
 StandardOutput=journal
 StandardError=journal
 
-[Install]
-WantedBy=multi-user.target
+# Started and stopped by the project lifecycle scripts; no independent boot target.

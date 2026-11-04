@@ -253,12 +253,14 @@ class Worker:
             branch = 'codex/autonomous-' + job_id[4:]
             exported = folder / 'export'
             ws.git('worktree', 'add', '-b', branch, str(exported), meta['base_commit'])
+            source_export = Workspace(Path(meta['repository']), exported)
             for change in diff['changes']:
                 path = change['path']; target = exported / path
                 if target.is_symlink() or not target.resolve().is_relative_to(exported.resolve()):
                     raise PermissionError('提交目标存在链接逃逸')
-                target.parent.mkdir(parents=True, exist_ok=True)
+                source_export.source_folder(target.parent)
                 target.write_bytes(ws.path(path).read_bytes())
+                source_export.source_file(target,0o700 if target.stat().st_mode & 0o111 else 0o600)
             git = Workspace(exported, folder / 'unused')
             paths = [x['path'] for x in diff['changes']]
             git.git('add', '--', *paths)

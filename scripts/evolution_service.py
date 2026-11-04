@@ -16,6 +16,7 @@ UNIT='astrbot-evolution-publisher.service'
 UNIT_SOURCE=ROOT/'deploy/systemd'/UNIT
 
 def managed():
+    if not Path('/usr/bin/systemctl').is_file():return False
     result=subprocess.run(['/usr/bin/systemctl','show',UNIT,'--property=FragmentPath','--value'],capture_output=True,text=True)
     return result.returncode==0 and Path(result.stdout.strip()).resolve()==UNIT_SOURCE.resolve()
 

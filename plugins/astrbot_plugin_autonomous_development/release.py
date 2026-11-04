@@ -24,9 +24,10 @@ def atomic(path, content):
     original = path.stat() if path.exists() else None
     fd, temporary = tempfile.mkstemp(prefix='.evolution-', dir=path.parent)
     try:
-        os.fchmod(fd, original.st_mode & 0o777 if original else 0o644)
-        if original and os.getuid() == 0:
-            os.fchown(fd, original.st_uid, original.st_gid)
+        os.fchmod(fd, original.st_mode & 0o777 if original else 0o600)
+        if os.getuid() == 0:
+            owner = original or path.parent.stat()
+            os.fchown(fd, owner.st_uid, owner.st_gid)
         with os.fdopen(fd, 'wb') as stream:
             stream.write(content); stream.flush(); os.fsync(stream.fileno())
         os.replace(temporary, path)
@@ -102,6 +103,17 @@ class Release:
         if target.is_symlink() or not target.resolve().is_relative_to(self.root) or any(p.is_symlink() for p in target.parents if p.is_relative_to(self.root)):
             raise PermissionError('发布目标存在链接逃逸')
         return target
+
+    def code_parent(self, target):
+        """New approved code directories inherit the local maintainer, not root's umask."""
+        missing=[];parent=target.parent
+        while not parent.exists():
+            if not parent.is_relative_to(self.root):raise PermissionError('发布目录超出项目')
+            missing.append(parent);parent=parent.parent
+        owner=parent.stat()
+        for folder in reversed(missing):
+            folder.mkdir(mode=0o700)
+            if os.getuid()==0:os.chown(folder,owner.st_uid,owner.st_gid)
 
     def push(self, meta):
         repo = Path(meta['repository']).resolve()
@@ -185,6 +197,7 @@ class Release:
         try:
             for change in changes:
                 target = self.root / change['path']
+                self.code_parent(target)
                 atomic(target, ws.path(change['source']).read_bytes()); touched.append(change)
             state['state'] = 'activating'; atomic(state_file, json.dumps(state).encode())
             if any('/plugins/' in '/' + c['path'] for c in changes): self.activate()

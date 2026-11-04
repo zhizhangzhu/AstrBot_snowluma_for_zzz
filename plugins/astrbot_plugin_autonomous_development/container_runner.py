@@ -151,7 +151,12 @@ class ContainerRunner:
                         if not target.resolve().is_relative_to(directory) or any(p.is_symlink() for p in [target,*target.parents] if p.is_relative_to(directory)):
                             raise PermissionError('宿主工作副本存在路径或链接逃逸')
                     for path,value in values.items():
-                        target=directory/path;target.parent.mkdir(parents=True,exist_ok=True);target.write_text(value)
+                        target=directory/path;target.parent.mkdir(parents=True,exist_ok=True,mode=0o700)
+                        for parent in (target.parent,*target.parent.parents):
+                            if not parent.is_relative_to(directory):break
+                            parent.chmod(0o700)
+                            if os.getuid()==0:os.chown(parent,uid,gid)
+                        target.write_text(value);target.chmod(0o700 if target.stat().st_mode & 0o111 else 0o600)
                         if os.getuid()==0:os.chown(target,uid,gid)
             return {'argv':argv,'exit_code':code,'output':(out+error).decode('utf8',errors='replace'),
                 'isolated':True,'engine':'docker','limits':{'memory_bytes':2*1024**3,'pids':64,'cpus':2,'scratch_bytes':512*1024**2}}

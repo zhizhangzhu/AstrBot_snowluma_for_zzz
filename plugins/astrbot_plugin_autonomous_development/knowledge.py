@@ -105,16 +105,23 @@ class Knowledge:
             'embedding_provider_id': '', 'daily_documents': 5, 'topics': [], 'allowed_domains': []}
         return {**defaults, **self.store.setting('knowledge', {})[0]}
 
-    def readiness(self):
+    def awareness(self):
+        """Compact live capability state for ordinary replies; no document/body scan."""
         cfg = self.config()
-        if not cfg['enabled']:
-            return False, '知识库维护已关闭'
-        if not getattr(self.context, 'kb_manager', None) or not cfg['writable_kbs']:
-            return False, '尚未选择可写知识库'
-        providers = {p.meta().id for p in self.context.get_all_embedding_providers()}
-        if not cfg['embedding_provider_id'] or cfg['embedding_provider_id'] not in providers:
-            return False, '需要选择可用的Embedding服务；聊天OAuth不自动提供向量化'
-        return True, ''
+        providers = {p.meta().id for p in getattr(self.context, 'get_all_embedding_providers', lambda: [])()}
+        embedding_available = bool(cfg['embedding_provider_id'] and cfg['embedding_provider_id'] in providers)
+        blockers = []
+        if not cfg['enabled']:blockers.append('知识库维护已关闭')
+        if not getattr(self.context, 'kb_manager', None):blockers.append('知识库管理器尚未就绪')
+        if not embedding_available:blockers.append('尚未选择可用的Embedding向量化服务')
+        if not cfg['writable_kbs']:blockers.append('尚未选择可写知识库')
+        return {'enabled':cfg['enabled'], 'ready':not blockers, 'reason':'；'.join(blockers),
+                'embedding_available':embedding_available, 'readable_kb_ids':cfg['readable_kbs'],
+                'writable_kb_ids':cfg['writable_kbs']}
+
+    def readiness(self):
+        state = self.awareness()
+        return state['ready'], state['reason']
 
     async def status(self):
         cfg = self.config()

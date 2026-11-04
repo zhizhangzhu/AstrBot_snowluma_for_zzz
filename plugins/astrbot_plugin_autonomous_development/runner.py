@@ -35,15 +35,36 @@ class Workspace:
         return subprocess.run(command,
             env=env, capture_output=True, timeout=timeout, check=True).stdout
 
+    def source_folder(self, folder):
+        """Source copies belong to the engine UID even under a private service umask."""
+        folder = Path(folder)
+        if not folder.resolve().is_relative_to(self.directory):
+            raise PermissionError('源码目录超出任务工作区')
+        folder.mkdir(parents=True, exist_ok=True, mode=0o700)
+        owner = self.repository.stat()
+        for item in (folder, *folder.parents):
+            if not item.is_relative_to(self.directory):break
+            if item.is_symlink():raise PermissionError('源码目录不允许链接')
+            item.chmod(0o700)
+            if os.getuid()==0:os.chown(item,owner.st_uid,owner.st_gid)
+
+    def source_file(self, path, mode=0o600):
+        path.chmod(mode)
+        if os.getuid()==0:
+            owner=self.repository.stat();os.chown(path,owner.st_uid,owner.st_gid)
+
+    def write_base_marker(self):
+        marker=self.directory/'.base-commit'
+        marker.write_text(self.base)
+        self.source_file(marker)
+
     def prepare(self, commit='HEAD'):
         if self.directory.exists():
             raise ValueError('工作目录已存在，不覆盖旧任务')
         self.base = self.git('rev-parse', '--verify', commit + '^{commit}').decode().strip()
-        self.directory.mkdir(parents=True, mode=0o700)
-        if os.getuid() == 0:
-            os.chown(self.directory, self.repository.stat().st_uid, self.repository.stat().st_gid)
+        self.source_folder(self.directory)
         if not self.git('ls-tree', '--name-only', self.base):
-            (self.directory / '.base-commit').write_text(self.base)
+            self.write_base_marker()
             return {'base_commit': self.base}
         raw = self.git('archive', '--format=tar', self.base)
         with tarfile.open(fileobj=io.BytesIO(raw), mode='r:') as archive:
@@ -55,11 +76,11 @@ class Workspace:
                 if not member.isfile():
                     continue
                 target = self.directory / member.name
-                target.parent.mkdir(parents=True, exist_ok=True)
+                self.source_folder(target.parent)
                 with archive.extractfile(member) as source:
                     target.write_bytes(source.read())
-                target.chmod(0o755 if member.mode & 0o111 else 0o644)
-        (self.directory / '.base-commit').write_text(self.base)
+                self.source_file(target,0o700 if member.mode & 0o111 else 0o600)
+        self.write_base_marker()
         return {'base_commit': self.base}
 
     def path(self, name):
@@ -86,8 +107,9 @@ class Workspace:
             raise PermissionError('超出已批准的文件范围')
         for name, body in files.items():
             p = self.path(name)
-            p.parent.mkdir(parents=True, exist_ok=True)
+            self.source_folder(p.parent)
             p.write_text(body)
+            self.source_file(p,0o700 if p.stat().st_mode & 0o111 else 0o600)
         return list(files)
 
     async def run(self, argv, timeout=60):

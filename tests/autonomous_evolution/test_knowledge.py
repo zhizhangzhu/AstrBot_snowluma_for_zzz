@@ -65,3 +65,17 @@ def test_learning_reports_missing_selected_embedding_before_model_call(tmp_path)
     ready,reason=knowledge.readiness()
     assert not ready and 'Embedding' in reason
     store.close()
+
+
+def test_knowledge_awareness_reports_real_blockers_then_authorized_ids(tmp_path):
+    store=Store(tmp_path/'awareness.sqlite3')
+    knowledge=Knowledge(S(kb_manager=S(),get_all_embedding_providers=lambda:[S(meta=lambda:S(id='available'))]),store)
+    initial=knowledge.awareness()
+    assert initial['enabled'] and not initial['ready'] and not initial['embedding_available']
+    assert 'Embedding' in initial['reason'] and '可写知识库' in initial['reason']
+    cfg=knowledge.config();cfg.update(embedding_provider_id='available',writable_kbs=['own-library'],readable_kbs=['own-library']);store.set_setting('knowledge',cfg)
+    ready=knowledge.awareness()
+    assert ready['ready'] and ready['embedding_available'] and ready['writable_kb_ids']==['own-library']
+    cfg['enabled']=False;store.set_setting('knowledge',cfg)
+    assert not knowledge.awareness()['ready']
+    store.close()

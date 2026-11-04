@@ -148,3 +148,18 @@ async def test_following_task_uses_published_source_while_human_branch_stays_unt
     subprocess.run(['git','-C',str(root),'add','--','docs/human.md'],check=True)
     subprocess.run(['git','-C',str(root),'-c','user.name=Test','-c','user.email=test@example.invalid','commit','-qm','human change'],check=True)
     with pytest.raises(PermissionError):worker.releases.source_base(root)
+
+
+def test_source_copy_and_new_files_remain_engine_readable_under_private_umask(tmp_path):
+    import os,stat
+    from astrbot_plugin_autonomous_development.runner import Workspace
+    root=repo(tmp_path);workspace=Workspace(root,tmp_path/'source')
+    previous=os.umask(0o077)
+    try:
+        workspace.prepare()
+        workspace.write({'docs/new/nested.md':'public source'},['docs/new/nested.md'])
+    finally:os.umask(previous)
+    for path in (workspace.directory/'.base-commit',workspace.directory/'docs/sample.md',workspace.directory/'docs/new/nested.md'):
+        assert path.stat().st_uid==root.stat().st_uid and stat.S_IMODE(path.stat().st_mode)==0o600
+    for path in (workspace.directory,workspace.directory/'docs',workspace.directory/'docs/new'):
+        assert path.stat().st_uid==root.stat().st_uid and stat.S_IMODE(path.stat().st_mode)==0o700

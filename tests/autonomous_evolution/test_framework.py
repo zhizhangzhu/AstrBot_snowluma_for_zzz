@@ -106,3 +106,28 @@ async def test_management_requires_actual_dashboard_login_and_rejects_stale_sett
     assert first['revision']==1
     with pytest.raises(ValueError):await admin.dispatch('setting',{'key':'development','value':value,'revision':0},'dashboard:admin')
     store.close()
+
+@pytest.mark.asyncio
+async def test_live_knowledge_readiness_is_in_owner_prompt_and_cancelled_goals_are_excluded(tmp_path):
+    from astrbot.api.provider import ProviderRequest
+    from astrbot_plugin_autonomous_development.knowledge import Knowledge
+    owner=AutonomousDevelopment.__new__(AutonomousDevelopment)
+    owner.store=Store(tmp_path/'awareness.sqlite3');owner.tasks=Tasks(owner.store)
+    companion=S(_primary_persona_id=lambda:'小小情');memory=S(service=object())
+    owner.context=S(get_all_stars=lambda:[S(name='astrbot_plugin_private_companion',activated=True,star_cls=companion),S(name='astrbot_plugin_memory_companion',activated=True,star_cls=memory)],
+        get_all_providers=lambda:[],get_all_embedding_providers=lambda:[],kb_manager=S(),
+        get_config=lambda **kw:{'provider_settings':{}},conversation_manager=S(get_curr_conversation_id=AsyncMock(return_value=None)),
+        persona_manager=S(resolve_selected_persona=AsyncMock(return_value=('小小情',object(),None))))
+    owner.configuration=S(enabled=lambda:{'enabled':True})
+    owner.knowledge=Knowledge(owner.context,owner.store)
+    from astrbot_plugin_autonomous_development.integrations import owner_identity
+    task=owner.tasks.create(owner_identity(),'已取消的检查目标');owner.tasks.update(owner_identity(),task['id'],state='cancelled')
+    req=ProviderRequest(prompt='资料是否保存了',system_prompt='原有人格')
+    await owner.on_llm_request(Event(),req)
+    state=json.loads(req.system_prompt.split('[自主成长实际能力]\n',1)[1].splitlines()[0])
+    assert not state['knowledge']['ready'] and not state['knowledge']['embedding_available']
+    assert state['pending_tasks']==[] and '不能声称已经入库' in req.system_prompt
+    other=ProviderRequest(prompt='资料',system_prompt='初小晴人格')
+    await owner.on_llm_request(Event('chuxiaoqing','2510093206','1207862759'),other)
+    assert other.system_prompt=='初小晴人格'
+    owner.store.close()

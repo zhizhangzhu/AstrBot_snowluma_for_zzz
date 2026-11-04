@@ -87,3 +87,13 @@ async def test_real_docker_worker_checks_then_commits_without_touching_human_tre
         assert (root/'docs/example.md').read_text()=='before\n'
         with pytest.raises(PermissionError):await call('run',argv=['python3','-c','pass'])
     finally:shutil.rmtree(root)
+
+@pytest.mark.asyncio
+async def test_new_exported_directories_work_with_private_service_umask(runner,source):
+    previous=os.umask(0o077)
+    try:
+        created=await runner.run(source,['python3','-c',"from pathlib import Path;p=Path('nested/new.py');p.parent.mkdir();p.write_text('answer=42')"],30,allowed=['nested/new.py'])
+    finally:os.umask(previous)
+    assert created['exit_code']==0 and (source/'nested').stat().st_uid==runner.root.stat().st_uid
+    read=await runner.run(source,['python3','-c',"from pathlib import Path;assert Path('nested/new.py').read_text()=='answer=42'"],30,allowed=['nested/new.py'],export=False)
+    assert read['exit_code']==0
