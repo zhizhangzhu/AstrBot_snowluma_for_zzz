@@ -32,3 +32,5 @@
 - 表情等回复媒体须沿当前事件发送；共享 QQ 会话编号不代表本次回复目标是 QQ。桌宠发送失败不得降级为 QQ。换装只更新身体观察，不逐次触发模型；桌宠形象是同一人格的自身化身。故障与验收证据见 docs/desktop-pet-acceptance.md。
 
 - 自主配置、自主开发、知识库成长与全局费用治理的需求基线见 docs/autonomous-evolution-design.md，开发阶段及验收见 docs/autonomous-evolution-development-plan.md。自主开发主 Bot 仅为小小情，配置自调与代码开发权限独立；文档完成不代表功能实现或权限已经开启。
+
+- Windows NSIS 验收即使使用临时 /D 目录，同 AppID 的安装器仍会访问现有卸载记录，可能卸载用户正式程序。已有正式安装的用户电脑上，界面与窗口回归使用 win-unpacked 和独立数据；完整安装器回归使用无既有安装的独立环境。对用户正式升级须先备份配对与终端配置，并验证 tsx、koffi、桌宠 World、实际 WSS 连接和源码摘要；仅看到版本号或安装器进程结束不能判定成功。参见 docs/desktop-installation-20261105.md。
