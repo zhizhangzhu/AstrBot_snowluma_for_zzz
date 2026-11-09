@@ -24,6 +24,30 @@ from .photo_nai_params import cache_user_photo_nai_params
 logger = get_module_logger(__name__)
 
 
+async def _prepare_private_image_buffer(self: Any, event: Any, user_id: str, key: str, received_ts: float):
+    """Publish an image buffer only after slow image storage has finished.
+
+    Called with the persona data lock held. Storage temporarily releases that
+    lock, so a previously looked-up buffer may be consumed or replaced meanwhile.
+    Never publish an incomplete placeholder or mutate a stale buffer after I/O.
+    """
+    async with self._temporarily_release_data_lock():
+        images = await self._persist_private_inbound_images(event, user_id)
+    if not images:
+        return None, images
+    self._note_semantic_message_buffer(
+        key,
+        "用户刚刚先单独发送了一张图片,可能马上会补充说明。",
+        event=event,
+        now=received_ts,
+        wait_seconds=self._message_debounce_seconds("image"),
+        kind="image",
+    )
+    buffers = getattr(self, "_semantic_message_buffers", None)
+    buffer = buffers.get(key) if isinstance(buffers, dict) else None
+    return buffer if isinstance(buffer, dict) else None, images
+
+
 def _coalesce_event_data_saves(handler: Any) -> Any:
     """Submit all durable mutations from one message handler as one request."""
 
@@ -700,38 +724,29 @@ async def handle_private_message(self: Any, event: Any, *args: Any, **kwargs: An
         if private_image_only:
             setattr(event, "private_companion_deferred_private_image_only", True)
             key = self._semantic_buffer_key(f"private:{user_id}", user_id)
-            self._note_semantic_message_buffer(
-                key,
-                "用户刚刚先单独发送了一张图片,可能马上会补充说明。",
-                event=event,
-                now=received_ts,
-                wait_seconds=self._message_debounce_seconds("image"),
-                kind="image",
+            buffer, persisted_images = await _prepare_private_image_buffer(
+                self, event, user_id, key, received_ts,
             )
-            buffers = getattr(self, "_semantic_message_buffers", None)
-            if isinstance(buffers, dict) and isinstance(buffers.get(key), dict):
-                async with self._temporarily_release_data_lock():
-                    persisted_images = await self._persist_private_inbound_images(event, user_id)
+            if buffer is None:
+                setattr(event, "private_companion_deferred_private_image_only", False)
+                logger.info(
+                    "私聊单图未建立图片缓冲,放行原始事件: user=%s sources=%s",
+                    user_id,
+                    len(persisted_images),
+                )
+                if smart_debounce_state_changed:
+                    self._schedule_data_save(sections={"smart_message_debounce"})
+                return
+            if isinstance(buffer, dict):
                 has_model_usable_image = any(self._private_image_source_to_model_url(source) for source in persisted_images)
-                if not persisted_images:
-                    buffers.pop(key, None)
-                    setattr(event, "private_companion_deferred_private_image_only", False)
-                    logger.info(
-                        "私聊单图未解析到可用图片源,放行原始事件: user=%s sources=%s",
-                        user_id,
-                        len(persisted_images),
-                    )
-                    if smart_debounce_state_changed:
-                        self._schedule_data_save(sections={"smart_message_debounce"})
-                    return
                 if not has_model_usable_image:
                     logger.info(
                         "私聊单图已保存但不可直供模型,仍进入防抖等待补充: user=%s sources=%s",
                         user_id,
                         len(persisted_images),
                     )
-                buffers[key]["images"] = persisted_images
-                buffers[key]["original_event"] = event
+                buffer["images"] = persisted_images
+                buffer["original_event"] = event
                 has_dynamic_gif_sources = (
                     bool(_persona_value(self, 'enable_private_image_gif_enhancement', True))
                     and self._private_image_sources_include_gif(persisted_images)
@@ -743,9 +758,9 @@ async def handle_private_message(self: Any, event: Any, *args: Any, **kwargs: An
                     main_provider_supports_image=bool(persisted_images) and self._event_main_provider_supports_image(event),
                     has_dynamic_gif=has_dynamic_gif_sources,
                 )
-                buffers[key]["image_mode"] = image_mode
+                buffer["image_mode"] = image_mode
                 if persisted_images and image_mode == "caption":
-                    buffers[key]["vision_task"] = self._create_lifecycle_background_task(
+                    buffer["vision_task"] = self._create_lifecycle_background_task(
                         self._transcribe_private_inbound_images(
                             persisted_images,
                             umo=umo,
