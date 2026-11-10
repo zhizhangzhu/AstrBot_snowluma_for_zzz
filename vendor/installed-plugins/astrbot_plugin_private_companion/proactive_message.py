@@ -17620,6 +17620,19 @@ class ProactiveMessageMixin(FinalResponsePersistenceMixin):
                 _single_line(umo, 140),
             )
             return False
+        from .outbound_rules import plan
+        initial = plan(self, None, chain, umo=umo)
+        if not initial:
+            return False
+        if len(initial) > 1:
+            for index, chunk in enumerate(initial):
+                if index:
+                    await asyncio.sleep(await self._calc_segmented_proactive_interval(
+                        self._segmented_chunk_log_text(initial[index-1]), umo=umo))
+                if not await self._send_chain_components(umo, chunk, apply_decorating_hooks=apply_decorating_hooks):
+                    return False
+            return True
+        chain = initial[0]
         marker_cleaner = getattr(self, "_strip_llm_segment_marker_lines", None)
         if callable(marker_cleaner):
             cleaned_chain: list[Any] = []
@@ -17699,6 +17712,19 @@ class ProactiveMessageMixin(FinalResponsePersistenceMixin):
                     before=self._chain_text_for_forbidden_recall(processed_chain),
                 )
             return False
+        from .outbound_rules import plan
+        planned = plan(self, None, processed_chain, umo=umo)
+        if not planned:
+            return False
+        if len(planned) > 1:
+            for index, chunk in enumerate(planned):
+                if index:
+                    await asyncio.sleep(await self._calc_segmented_proactive_interval(
+                        self._segmented_chunk_log_text(planned[index-1]), umo=umo))
+                if not await self._send_chain_components(umo, chunk, apply_decorating_hooks=False):
+                    return False
+            return True
+        processed_chain = planned[0]
         desktop_result = await terminal_integration.deliver(self, umo, processed_chain)
         if desktop_result is not None:
             return desktop_result

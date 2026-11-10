@@ -96,14 +96,20 @@ async def prepare_message(host, event, state, message):
     quoted = False
     if (selected and not state['sent'] and not state.get('text_sent') and visible
             and hasattr(message, 'chain') and await valid_target(host, event, state, selected)):
-        from .relevance import supports_reply
+        from .relevance import validate_reply
         reply_text = '\n'.join(str(getattr(c, 'text', '') or '') for c in components
                                if c.__class__.__name__.lower() == 'plain')
-        if not supports_reply(host, event, state, selected, reply_text):
+        reply_text = state.get('reply_text') or reply_text
+        if not await validate_reply(host, event, state, selected, reply_text):
+            logger.info('私聊引用未附加: reason=%s', state.get('relevance', {}).get('reason', 'unknown'))
             state['choice'] = None
             if components != original_chain:
                 message = copy(message)
                 message.chain = components
+            return message, visible, False
+        from .context import binding_for
+        if await binding_for(host, event) != state['binding']:
+            state['choice'] = None
             return message, visible, False
         component = host._make_reply_component(selected['mid'], event=event)
         if component is not None:
@@ -163,7 +169,9 @@ async def send(host, event, original, message, args, kwargs):
                 result = await original(message, *args, **kwargs)
                 if result is not False:
                     if visible:state['text_sent'] = True
-                    if quoted:state['sent'] = True
+                    if quoted:
+                        state['sent'] = True
+                        logger.info('私聊引用已随正文发送: reason=%s', state.get('relevance', {}).get('reason', 'validated'))
                 return result, message
             finally:
                 if state.get('_sending_task') is task:state.pop('_sending_task',None)

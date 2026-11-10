@@ -111,30 +111,34 @@ class DesktopPetPlugin(RemoteMixin, ScheduleMixin, Star):
                 return None
             if preference == "wait":
                 return False
-            try:
-                receipt = await self.platform.deliver(binding, message, proactive=True)
-            except DeliveryNotSubmitted:
+            module = sys.modules[type(owner).__module__]
+            rules = importlib.import_module(module.__package__ + '.outbound_rules')
+            async def dispatch(outbound):
+                receipt = await self.platform.deliver(binding, outbound, proactive=True)
+                if receipt is None:
+                    return False
+                request_id = str(receipt.get("request_id") or uuid.uuid4().hex)
+                try:
+                    await record_outputs(self.context, binding, receipt, request_id)
+                    module = sys.modules[type(owner).__module__]
+                    persistence = importlib.import_module(module.__package__ + ".final_response_persistence")
+                    ledger = persistence._CURRENT_DELIVERY.get()
+                    text = owner._actual_text_from_delivered_chain(outbound.chain)
+                    if ledger and ledger.umo == str(origin) and ledger.passive and ledger.event is not None and not ledger.finalized:
+                        rows = getattr(ledger.event, "_qq_context_side_messages", None)
+                        if rows is None:
+                            rows = []; ledger.event._qq_context_side_messages = rows
+                        rows.append({"id": request_id, "umo": str(origin), "text": text, "terminal": "desktop"})
+                    else:
+                        await owner._archive_proactive_message_to_conversation(user={"umo": str(origin)},
+                            user_prompt="", assistant_response=text, umo=str(origin))
+                except Exception as exc:
+                    logger.warning("已展示的桌宠消息待核对记录：%s", type(exc).__name__)
+                return True
+            outcome = await rules.send_event(owner, None, message, dispatch, umo=str(origin))
+            if isinstance(outcome['error'], DeliveryNotSubmitted) and not outcome['chains']:
                 return None
-            if receipt is None:
-                return False
-            request_id = str(receipt.get("request_id") or uuid.uuid4().hex)
-            try:
-                await record_outputs(self.context, binding, receipt, request_id)
-                module = sys.modules[type(owner).__module__]
-                persistence = importlib.import_module(module.__package__ + ".final_response_persistence")
-                ledger = persistence._CURRENT_DELIVERY.get()
-                text = owner._actual_text_from_delivered_chain(message.chain)
-                if ledger and ledger.umo == str(origin) and ledger.passive and ledger.event is not None and not ledger.finalized:
-                    rows = getattr(ledger.event, "_qq_context_side_messages", None)
-                    if rows is None:
-                        rows = []; ledger.event._qq_context_side_messages = rows
-                    rows.append({"id": request_id, "umo": str(origin), "text": text, "terminal": "desktop"})
-                else:
-                    await owner._archive_proactive_message_to_conversation(user={"umo": str(origin)},
-                        user_prompt="", assistant_response=text, umo=str(origin))
-            except Exception as exc:
-                logger.warning("已展示的桌宠消息待核对记录：%s", type(exc).__name__)
-            return True
+            return bool(outcome['chains']) and outcome['error'] is None and outcome['result'] is not False
         finally:
             if token is not None:
                 owner._deactivate_persona_for_event(token)
@@ -298,10 +302,8 @@ class DesktopPetPlugin(RemoteMixin, ScheduleMixin, Star):
         binding=await self.authorized_binding(event)
         if not binding:return
         payload={}
-        text=getattr(resp,"completion_text","")
-        if isinstance(text,str) and text:
-            payload['event']={"type":"response.output_text.delta","delta":text,
-                "item_id":str(getattr(event.message_obj,"message_id","")),"output_index":0,"content_index":0,"sequence_number":0}
+        # Visible text is delivered only after the shared decorating/filtering
+        # rules. A raw model delta here would bypass cleanup and duplicate speech.
         usage=getattr(resp,'usage',None)
         if usage is not None:
             record={'id':str(getattr(resp,'id',None) or uuid.uuid4().hex), 'ts':time.time(),
@@ -372,6 +374,31 @@ class DesktopPetPlugin(RemoteMixin, ScheduleMixin, Star):
         value = json.loads(arguments)
         if not isinstance(value, dict):
             raise ValueError("arguments_must_be_object")
+        if world == 'desktop-pet' and capability == 'pet_say' and isinstance(value.get('script'), str):
+            owner = installed(self.context, 'astrbot_plugin_private_companion')
+            if owner is not None:
+                from astrbot.api.message_components import Plain
+                from astrbot.core.message.message_event_result import MessageChain
+                token = owner._activate_persona_id(peer.binding.persona_id, allow_inactive=True)
+                try:
+                    module = sys.modules[type(owner).__module__]
+                    rules = importlib.import_module(module.__package__ + '.outbound_rules')
+                    results = []
+                    async def dispatch(outbound):
+                        request_id = uuid.uuid4().hex
+                        text = ''.join(c.text for c in outbound.chain if isinstance(c, Plain))
+                        result = await self.hub.call(peer.binding, world, capability,
+                            {**value, 'script': text}, call_id=request_id)
+                        result['request_id'] = request_id
+                        results.append(result)
+                        await record_outputs(self.context, peer.binding, result, request_id, archive=True)
+                        return result.get('status') in {'completed', 'submitted'}
+                    outcome = await rules.send_event(owner, None, MessageChain([Plain(value['script'])]),
+                        dispatch, umo=peer.binding.conversation_origin)
+                    return json.dumps({**(results[-1] if results else {}), 'status': results[-1].get('status','unknown') if results and outcome['chains'] and outcome['error'] is None and outcome['result'] is not False else 'incomplete',
+                        'deliveries': results, 'next': 'Inspect delivery receipts before retrying.'}, ensure_ascii=False)
+                finally:
+                    if token is not None: owner._deactivate_persona_for_event(token)
         request_id = uuid.uuid4().hex
         try:
             result = await self.hub.call(peer.binding, world, capability, value, call_id=request_id)

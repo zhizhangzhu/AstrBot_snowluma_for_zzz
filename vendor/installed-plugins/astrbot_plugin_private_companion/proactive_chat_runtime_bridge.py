@@ -530,6 +530,11 @@ class ProactiveChatRuntimeBridge:
             processed = list(processed or [])
             if not processed:
                 return {"sent": False, "reason": "empty_after_decorating", "component_count": 0}
+            common_sender = getattr(self.owner, '_send_chain_components', None)
+            if callable(common_sender):
+                sent = await common_sender(session_id, processed, apply_decorating_hooks=False)
+                return {'sent': bool(sent), 'path': 'companion_common_rules',
+                        'component_count': len(processed)}
             chain = MessageChain(processed)
             parsed = instance._parse_session_id(session_id)
             if not parsed:

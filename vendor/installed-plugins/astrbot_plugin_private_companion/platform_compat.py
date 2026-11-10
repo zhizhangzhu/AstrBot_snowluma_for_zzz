@@ -60,7 +60,7 @@ _PLATFORM_PROFILES: dict[str, dict[str, Any]] = {
         "label": "Windows 桌宠终端", "identity_label": "已配对的共同用户",
         "delivery_policy": "adapter_managed",
         "capabilities": {**_BASE_CAPABILITIES, "voice": False, "file": False,
-            "reply_quote": False, "segmented_reply": False, "group_proactive": False, "qzone": True},
+            "reply_quote": False, "segmented_reply": True, "group_proactive": False, "qzone": True},
         "limits": ["动作由已配对桌宠执行；QQ 空间使用关联 Bot 的原生接口"],
     },
     "onebot": {

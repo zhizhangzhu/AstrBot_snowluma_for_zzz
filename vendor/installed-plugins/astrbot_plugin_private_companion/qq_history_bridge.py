@@ -163,18 +163,36 @@ def install(context):
                             receipt_bridge,receipt_token=_receipt_scope(client,scope);break
         except Exception as exc:
             logger.debug('QQ发送历史准备未完成: %s',type(exc).__name__);scope=None
+        persona_token=None
         try:
-            result=await bridge['original'](current,session,message_chain,*args,**kwargs)
-            if result is True and scope:
-                try:
-                    active=receipt_bridge['active'].get() if receipt_bridge else {}
-                    mids=list((active or {}).get('message_ids',[]))
-                    await bridge['record'](current,host,scope,list(getattr(message_chain,'chain',[]) or []),mids)
-                except Exception as exc:
-                    # A persistence failure must never cause a QQ resend.
-                    logger.warning('QQ消息已发送，但补写历史失败: %s',type(exc).__name__)
+            chunks=[list(getattr(message_chain,'chain',[]) or [])]
+            if scope:
+                persona_token=host._activate_persona_id(scope['persona'])
+                if getattr(host,'enable_multi_persona_mode',False) and persona_token is None:
+                    return False
+                from .outbound_rules import plan
+                chunks=plan(host,None,chunks[0],umo=origin)
+            result=False
+            for index,chain in enumerate(chunks):
+                if index:
+                    await asyncio.sleep(await host._calc_segmented_proactive_interval(
+                        visible_text(chunks[index-1]),umo=origin))
+                from copy import copy
+                outbound=copy(message_chain)
+                outbound.chain=chain
+                active=receipt_bridge['active'].get() if receipt_bridge else {}
+                before=len((active or {}).get('message_ids',[]))
+                result=await bridge['original'](current,session,outbound,*args,**kwargs)
+                if result is False:return False
+                if result is True and scope:
+                    try:
+                        mids=list((active or {}).get('message_ids',[]))[before:]
+                        await bridge['record'](current,host,scope,chain,mids)
+                    except Exception as exc:
+                        logger.warning('QQ消息已发送，但补写历史失败: %s',type(exc).__name__)
             return result
         finally:
+            if persona_token is not None:host._deactivate_persona_for_event(persona_token)
             if receipt_bridge and receipt_token is not None:receipt_bridge['active'].reset(receipt_token)
     setattr(cls,BRIDGE,bridge);cls.send_message=tracked
     return True

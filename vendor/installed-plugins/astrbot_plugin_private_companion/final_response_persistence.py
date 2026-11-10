@@ -317,13 +317,18 @@ class FinalResponsePersistenceCoordinator:
                         )
                         message = message.replace(PHOTO_TOOL_SILENT_SENTINEL, "")
                     from .private_quotes.transport import send as send_with_private_quote
-                    send_result, delivered_message = await send_with_private_quote(
-                        self.owner, event, original_send, message, args, kwargs
-                    )
-                    sent_chain = getattr(delivered_message, "chain", sent_chain)
-                    if send_result is not False and isinstance(sent_chain, (list, tuple)) and sent_chain:
-                        self._append_confirmation(ledger, list(sent_chain))
-                    return send_result
+                    from .outbound_rules import send_event
+                    async def dispatch(chunk):
+                        result, delivered_message = await send_with_private_quote(
+                            self.owner, event, original_send, chunk, args, kwargs)
+                        actual = getattr(delivered_message, "chain", None)
+                        if result is not False and isinstance(actual, (list, tuple)) and actual:
+                            self._append_confirmation(ledger, list(actual))
+                        return result
+                    outcome = await send_event(self.owner, event, message, dispatch)
+                    if outcome['error'] is not None:
+                        raise outcome['error']
+                    return outcome['result']
 
                 ledger.original_send = original_send
                 setattr(event, "_private_companion_original_send", original_send)
@@ -341,6 +346,23 @@ class FinalResponsePersistenceCoordinator:
                     *args: Any,
                     **kwargs: Any,
                 ) -> Any:
+                    # OneBot/desktop have no native editable streaming message.
+                    # Buffer deltas, then use exactly the same configured splitter;
+                    # the adapter fallback must not impose its own punctuation regex.
+                    platform_name = str(getattr(event, 'get_platform_name', lambda: '')() or '').lower()
+                    if platform_name in {'aiocqhttp', 'desktop_pet'}:
+                        from copy import copy
+                        combined = None
+                        components = []
+                        async for fragment in generator:
+                            parts = getattr(fragment, 'chain', None)
+                            if not isinstance(parts, (list, tuple)):
+                                raise TypeError('Streaming chat requires MessageChain deltas')
+                            if combined is None: combined = copy(fragment)
+                            components.extend(parts)
+                        if combined is None: return None
+                        combined.chain = components
+                        return await event.send(combined)
                     captured: list[list[Any]] = []
 
                     async def capture_generator():

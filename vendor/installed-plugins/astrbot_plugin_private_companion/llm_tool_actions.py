@@ -8903,6 +8903,19 @@ class LlmToolActionsMixin:
         candidates = self._atrelay_target_umo_candidates(event, message_type, target_id)
         if not candidates:
             return False, "没有可用目标会话", ""
+        common_sender = getattr(self, '_send_chain_components', None)
+        if callable(common_sender):
+            for umo in candidates:
+                session = self._parse_message_session(umo)
+                if not session or not self._get_platform_for_session(session):
+                    continue
+                try:
+                    sent = await common_sender(umo, chain)
+                except Exception as exc:
+                    # An uncertain delivery must not be replayed on another route.
+                    return False, self._format_send_exception(exc), umo
+                return bool(sent), '' if sent else '发送已被过滤或结果未确认，不自动重发', umo
+            return False, '没有可用目标平台', ''
         for umo in candidates:
             session = self._parse_message_session(umo)
             platform = self._get_platform_for_session(session) if session else None

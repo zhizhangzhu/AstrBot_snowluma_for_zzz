@@ -47,6 +47,19 @@ class QuoteStore:
                 ORDER BY stamp DESC,rowid DESC LIMIT ?''',(key(binding),time.time()-hours*3600,limit)).fetchall()
         return [dict(zip(('mid','actor','stamp','text','kind'),r)) for r in rows][::-1]
 
+    def search(self,binding,query,*,limit=12,hours=24):
+        # Local, bounded search in this exact account/persona/conversation only.
+        terms=list(dict.fromkeys(str(query or '').lower().split()))[:6]
+        if not terms:return []
+        terms=[t[:80] for t in terms]
+        matches=' OR '.join('instr(lower(a.text),?)>0' for _ in terms)
+        with closing(self.connect()) as db:
+            rows=db.execute('SELECT mid,actor,stamp,text,kind FROM anchors a WHERE scope=? AND stamp>=? AND ('+matches+') '
+                'AND NOT EXISTS(SELECT 1 FROM withdrawn w WHERE w.base=a.base AND w.mid=a.mid) '
+                'ORDER BY stamp DESC,rowid DESC LIMIT ?',
+                (key(binding),time.time()-hours*3600,*terms,max(1,min(24,int(limit))))).fetchall()
+        return [dict(zip(('mid','actor','stamp','text','kind'),row)) for row in rows][::-1]
+
     def get(self,binding,mid,*,hours=24):
         return next((r for r in self.recent(binding,limit=300,hours=hours) if r['mid']==str(mid)),None)
 

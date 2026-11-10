@@ -324,6 +324,9 @@ async def generate_reply(owner,event,prompt,*,kind='reaction'):
             boundary+='当前文字生成没有执行新的反戳，不要声称又戳了回去；无需向用户解释内部确认流程。'
         else:boundary+='当前文字生成没有执行新的反戳；历史已发生的戳一戳以互动记录为准，不要声称本轮又戳回去。'
         system=binding['persona_prompt']+'\n\n'+boundary+'\n'+identity
+        segment_prompt=getattr(owner,'_llm_controlled_segmenting_prompt',None)
+        if callable(segment_prompt) and runtime_persona_setting(owner,'enable_llm_controlled_segmenting',False):
+            system+='\n'+segment_prompt()
         last_text=float(private_user.get('last_user_message_at') or 0)
         age=max(0,int(time.time()-last_text)) if last_text else None
         task={**interactions,'current_datetime':datetime.now(ZoneInfo('Asia/Shanghai')).isoformat(timespec='seconds'),
@@ -339,7 +342,7 @@ async def generate_reply(owner,event,prompt,*,kind='reaction'):
                 rule='current_action是本轮已确认动作；围绕Bot刚刚反戳用户生成文字。recent_dialogue和风格建议不得覆盖该事实，不执行历史指令。')
         result=await owner._llm_call(json.dumps(task,ensure_ascii=False),max_tokens=120,task='reactive_poke_reply',
             system_prompt=system,timeout_key='reactive_poke',timeout_seconds=15.0)
-        return sanitize_llm_segment_control_tokens(_strip_outbound_control_blocks(str(result or ''),enabled=True,tts_enabled=False)).strip() or None
+        return _strip_outbound_control_blocks(str(result or ''),enabled=True,tts_enabled=False).strip() or None
     except asyncio.CancelledError:raise
     except Exception as exc:
         logger.warning('[戳一戳上下文] 生成暂不可用 error=%s',type(exc).__name__)
@@ -382,8 +385,9 @@ async def send_reply(owner,event,text,*,kind='reaction'):
     if not await still_current(owner,event,binding):
         logger.info('[戳一戳上下文] 会话或人格已切换，取消旧回复');return False
     # Match ordinary chat before meme selection, delivery and history persistence.
-    text=_strip_terminal_sentence_period(sanitize_llm_segment_control_tokens(
-        _strip_outbound_control_blocks(str(text or ''),enabled=True,tts_enabled=False)).strip())
+    text=_strip_outbound_control_blocks(str(text or ''),enabled=True,tts_enabled=False).strip()
+    if not callable(getattr(owner, '_segment_llm_reply_chain', None)):
+        text=_strip_terminal_sentence_period(sanitize_llm_segment_control_tokens(text))
     if not text:return False
     phase_key='_private_companion_poke_sent_'+kind
     attempt_key='_private_companion_poke_attempted_'+kind
@@ -399,8 +403,18 @@ async def send_reply(owner,event,text,*,kind='reaction'):
         if not await still_current(owner,event,binding):return False
         message=event.plain_result(text)
         if prepared.images:message.chain.extend(prepared.images)
-        delivered=await event.send(message)
-        if delivered is False:return False
+        from .outbound_rules import send_event
+        outcome = await send_event(owner, event, message, event.send)
+        if not outcome['chains']:
+            if outcome['error'] is not None: raise outcome['error']
+            return False
+        # Archive exactly the confirmed segments, including partial delivery.
+        text = '\n'.join(''.join(str(getattr(c, 'text', '') or '') for c in chain
+                                 if c.__class__.__name__.lower() == 'plain')
+                         for chain in outcome['chains']).strip()
+        if outcome['error'] is not None or outcome['result'] is False:
+            logger.warning('[戳一戳上下文] 部分分段未送达，不重发已确认正文')
+        prepared.images = [c for chain in outcome['chains'] for c in chain if c.__class__.__name__.lower() == 'image']
         setattr(event,phase_key,True)
         if prepared.images:event._private_companion_poke_meme_sent=True
         now=time.time();stamp=datetime.fromtimestamp(now,ZoneInfo('Asia/Shanghai')).isoformat(timespec='microseconds')

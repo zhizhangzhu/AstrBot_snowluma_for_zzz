@@ -1864,15 +1864,16 @@ class PrivateCompanionPlugin(
 
     @filter.llm_tool(name='pc_private_quote')
     @_multi_persona_event_context
-    async def pc_private_quote(self, event: AstrMessageEvent, operation: str = 'list', target_ref: str = ''):
+    async def pc_private_quote(self, event: AstrMessageEvent, operation: str = 'list', target_ref: str = '', query: str = ''):
         """仅在私聊需要回头回复旧消息、补答、纠正或区分话题时，选择本轮真实消息引用。不发送消息。
 
         Args:
-            operation(string): list查看本轮有效候选；select选择；clear取消引用。普通接话不必调用。
+            operation(string): list查看本轮有效候选；search按query搜索旧话题；select选择；clear取消引用。普通接话不必调用。
             target_ref(string): select使用候选返回的ref，不接受QQ消息ID，也不能猜测。选好后直接正常输出一次最终回复。
+            query(string): search时用于查找当前会话旧消息的话题关键词，可用空格分隔多个关键词。
         """
         from .private_quotes import action
-        return json.dumps(await action(self,event,operation,target_ref),ensure_ascii=False)
+        return json.dumps(await action(self,event,operation,target_ref,query),ensure_ascii=False)
 
     def real_schedule_control(self, request=None):
         from .real_schedule.cooperation import control
@@ -12389,6 +12390,12 @@ class PrivateCompanionPlugin(
             return [], False, ""
         full_text = sanitize_llm_segment_control_tokens(full_text)
         final_chunks = self._clean_segmented_reply_chunks(event, chunks) if changed else [chain]
+        from .outbound_rules import mark
+        mark(final_chunks)
+        quote_state = getattr(event, '_private_quote_request', None)
+        if quote_state and not quote_state.get('text_sent'):
+            quote_state['reply_text'] = full_text
+
         history_segments = getattr(
             event,
             "_private_companion_llm_history_segments",
