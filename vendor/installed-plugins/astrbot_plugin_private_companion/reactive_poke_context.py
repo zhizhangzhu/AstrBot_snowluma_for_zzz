@@ -15,7 +15,7 @@ from types import SimpleNamespace
 
 from astrbot.api import logger
 from astrbot.core.agent.message import AssistantMessageSegment, UserMessageSegment
-from .helpers import _strip_outbound_control_blocks
+from .helpers import _strip_outbound_control_blocks, _strip_terminal_sentence_period
 from .segmented_message import sanitize_llm_segment_control_tokens
 from .persona_config import runtime_persona_setting
 
@@ -381,7 +381,9 @@ async def send_reply(owner,event,text,*,kind='reaction'):
     binding=await prepare_turn(owner,event)
     if not await still_current(owner,event,binding):
         logger.info('[戳一戳上下文] 会话或人格已切换，取消旧回复');return False
-    text=sanitize_llm_segment_control_tokens(_strip_outbound_control_blocks(str(text or ''),enabled=True,tts_enabled=False)).strip()
+    # Match ordinary chat before meme selection, delivery and history persistence.
+    text=_strip_terminal_sentence_period(sanitize_llm_segment_control_tokens(
+        _strip_outbound_control_blocks(str(text or ''),enabled=True,tts_enabled=False)).strip())
     if not text:return False
     phase_key='_private_companion_poke_sent_'+kind
     attempt_key='_private_companion_poke_attempted_'+kind
