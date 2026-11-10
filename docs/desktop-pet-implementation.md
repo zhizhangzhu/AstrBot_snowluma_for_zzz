@@ -178,3 +178,14 @@ pnpm exec tsx scripts/pack.ts
 
 
 2026-11-05：0.3.6 已在原 Windows 安装目录运行并连到小小情。安装依赖不完整的问题通过已验证的 `win-unpacked` 文件修复，原配对和本地配置保留；正式客户端隐藏恢复 3 轮通过。NSIS 完整验收未通过，生成的安装包不能当作发布版本，详见[升级记录](desktop-installation-20261105.md)和[验收证据](desktop-pet-acceptance.md)。
+
+
+## 小小情分层形象（2026-11-10）
+
+实现入口为 `Coopanion/packages/cortico-world-desktop-pet/web/xiaoxiaoqing/figure.js`，布局为同目录 `model.json`。新增独立形象 `xiaoxiaoqing`，保留 Coo、大肥鱼与当前选择；配色只有默认，服装为向日葵款、太阳帽款。两套服装共用身体、衣服与动作，切换头饰和刘海星星。
+
+生产素材为重新制作的两张透明图层图集，含 22 个绘制部件，眼睛和嘴按状态切换。复用原身体组件的 19 个表情、18 个动作、触摸、拖拽与移动回执；前后发、饰带、袖子、腿独立运动。拆层补绘了遮挡部位，拼合像素与定稿整图并非完全相同。定稿原图保存在 `.runtime/figure-designs/xiaoxiaoqing-approved/`，未覆盖或继续修整。
+
+现有 API 2 客户端可以通过装扮页导入 `小小情-形象包-1.0.0.zip`，无需覆盖大肥鱼目录。交付目录为 `.runtime/figure-designs/xiaoxiaoqing-release/`，包含 ZIP、校验值、原装扮页截图及离线交互预览。运行客户端目录中的 `pnpm exec tsx scripts/preview-xiaoxiaoqing.ts` 可以从真实绘制器重新生成预览。
+
+本地验收：528 项应用测试、206 项 World 测试通过，3 项平台测试跳过，3 组类型检查通过。导入回归使用真实 ZIP 解析与安装器，验证旧 API 2 客户端保留两个内置形象并新增小小情。浏览器验证使用真实 World 的原装扮页和独立配置，确认默认配色、两套服装及保存；离线预览验证 19 个表情、18 个动作控件和两套切换。预览不连接 QQ 或模型。Windows 用户客户端尚未安装本形象包，没有改变其当前装扮或部署生产服务。
