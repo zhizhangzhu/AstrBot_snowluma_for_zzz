@@ -2193,6 +2193,12 @@ class ProactiveMessageMixin(FinalResponsePersistenceMixin):
         action: str,
     ) -> str:
         """让当前能量影响表达形状，而不是只影响是否发送。"""
+        from .peer_expression import EXPRESSION, enabled
+        if enabled(self):
+            return prompt_section(
+                key="proactive.expression_shape", title="主动交流的表达",
+                source="proactive_message", content=EXPRESSION,
+            )
         state = self.data.get("daily_state", {})
         energy = _safe_int(state.get("energy"), 70, 0, 100) if isinstance(state, dict) else 70
         lines = [
@@ -2857,6 +2863,8 @@ class ProactiveMessageMixin(FinalResponsePersistenceMixin):
         self,
         variables: dict[str, Any] | None = None,
     ) -> PromptDocument:
+        from .peer_expression import EXPRESSION, INTENT, enabled
+        peer = enabled(self)
         values = dict(variables or {})
 
         def value(name: str) -> Any:
@@ -2907,7 +2915,7 @@ class ProactiveMessageMixin(FinalResponsePersistenceMixin):
                     key="proactive.template.selection",
                     title="先判断，再开口",
                     source="proactive_message",
-                    content=(
+                    content=(INTENT if peer else (
                         "- 从线索中只选一个此刻最真实、最具体、最值得说的切口；无关线索直接忽略。\n"
                         "- 天气通常只是环境底色，不是默认话题。只有“话题方向/开口动机”明确来自刚发生的环境突变或当前官方预警时，才把天气写进正文；其他主动不要顺手聊天气、报温度、问对方那边天气如何。\n"
                         "- 开口动机是内部决策依据，不是你要说出口的话；不要照抄动机里的措辞，用你自己的方式开口。\n"
@@ -2915,18 +2923,18 @@ class ProactiveMessageMixin(FinalResponsePersistenceMixin):
                         "- 日程、状态和记忆只能帮助确定语气与话题，不可单独证明某个动作已经完成；只有本轮真实动作结果可以支撑具体的已发生陈述。\n"
                         "- 线索偏弱、对方尚未回复或时段不适合展开时，把话说得更轻：可以分享、留白或自然收住，但不追问、不催回应、不索取陪伴。\n"
                         "- 不要凭空补事实，不要把旧事写成刚刚发生；不要为了主动而主动。"
-                    ),
+                    )),
                 ),
                 prompt_section(
                     key="proactive.template.composition",
                     title="成文方式",
                     source="proactive_message",
-                    content=(
+                    content=(EXPRESSION if peer else (
                         "- 像角色在聊天窗口里自然想到后说出的一小句，而不是客服关怀、情绪鸡汤、日记、总结、推荐文或任务汇报。\n"
                         "- 口语、具体、有一点个人温度；少解释，不复述上下文，不列清单，不使用“检测到/根据/安排/提醒你”等系统或管理口吻。\n"
                         "- 如果想关心对方，用能自然接住的话表达，不把“在吗”“忙不忙”“怎么不回”“记得回复”当作开场。\n"
                         "- 一两句即可；一个画面、一点感受或一个轻问题已经足够。说完就停，不追加自我解释或结尾客套。"
-                    ),
+                    )),
                 ),
                 _proactive_prompt_part(prompt_section(
                     key="proactive.template.output",
@@ -4226,6 +4234,15 @@ class ProactiveMessageMixin(FinalResponsePersistenceMixin):
         motive: str = "",
         action_context: str = "",
     ) -> PromptSection | None:
+        from .peer_expression import INTENT, enabled
+        if enabled(self):
+            return prompt_section(
+                key="proactive.generation_intent", title="本次交流的由头", source="proactive_message",
+                content=INTENT + "\n" + json.dumps({
+                    "reason": reason, "action": action, "motive": motive,
+                    "action_context": action_context,
+                }, ensure_ascii=False),
+            )
         semantics: dict[str, Any] = {}
         semantic_getter = getattr(self, "_planned_proactive_semantics", None)
         if callable(semantic_getter):

@@ -13898,6 +13898,9 @@ class PrivateCompanionPlugin(
             ),
         }
         label, attr, note = specs.get(channel, ("表达风格", f"persona_{channel}_voice_prompt", "只在对应链路使用。"))
+        from .peer_expression import enabled
+        if enabled(self):
+            note = "仅用于本通道的表达，遵循当前人格、已确认关系与真实材料；篇幅和语气由内容决定。"
         text = self._normalize_persona_voice_text(
             runtime_persona_setting(self, attr, ""),
             max_chars=1400,

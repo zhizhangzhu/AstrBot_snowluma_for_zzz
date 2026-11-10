@@ -739,6 +739,19 @@
         "hint": "开启后，插件会把人格标准化提取出的表达风格按对话、创作、计划、内心活动、主动开口五个通道分别注入对应链路，避免一种聊天口癖污染所有任务。",
         "default": true
       },
+      "persona_interaction_orientation": {
+        "description": "相处表达方式",
+        "type": "string",
+        "options": ["persona", "peer"],
+        "hint": "persona 沿用既有人格表达；peer 强调平等交流、双向分享和自主表达，放开固定话术结构。仅影响本人格的表达，不改变工具权限、勿扰、频率或任务约定。",
+        "default": "persona"
+      },
+      "persona_peer_relationship_prompt": {
+        "description": "平等相处的共同定位",
+        "type": "text",
+        "hint": "peer 模式下附加在已核验主要用户的私聊关系背景中。只定义相处方式，既有学习关系事实继续更新；不改变关系分数、角色或权限。",
+        "default": ""
+      },
       "persona_conversation_voice_prompt": {
         "description": "对话风格",
         "type": "text",

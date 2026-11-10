@@ -943,6 +943,9 @@ class QzoneScheduleMixin:
 - 禁止出现“能量”“心理能量”“/100”“状态变量”“当前状态”等内部汇报词。
 - 不要 @ 用户,不要泄露私聊内容,不要写得像营销文。
 - 写作角度：{theme_hint}""".strip()
+            from .peer_expression import enabled, CREATIVE
+            if enabled(self):
+                instruction = "请以当前 Bot 人格写一条 QQ 空间说说。只输出正文。\n" + CREATIVE + "\n" + length_rule
             instruction_with_special = instruction
             if special_sections:
                 instruction_with_special += "\n" + render_prompt_sections(

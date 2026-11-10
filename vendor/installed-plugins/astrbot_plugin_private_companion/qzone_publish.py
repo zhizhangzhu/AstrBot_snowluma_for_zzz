@@ -81,8 +81,10 @@ class QzonePublishMixin:
         day_type = "周末" if now.tm_wday >= 5 else "工作日"
         return f"{time.strftime('%Y年%m月%d日 %H:%M', now)}，{weekday}，{day_type}，{season}，{period}。"
 
-    @staticmethod
-    def _qzone_publish_theme_hint() -> str:
+    def _qzone_publish_theme_hint(self) -> str:
+        from .peer_expression import enabled
+        if enabled(self):
+            return "按当前人格的兴趣和当下表达意愿选择主题"
         themes = (
             "记录当前时段里一件具体的小事",
             "写一个自然冒出来的心情余味",
@@ -390,6 +392,9 @@ class QzonePublishMixin:
             "只写一个具体画面加一个动作，开头直接进入画面，不要用“今天也是……的一天”这类模板句式开场；"
             "发之前读一遍，删掉不像这个人格会说的话。"
         )
+        from .peer_expression import enabled, CREATIVE
+        if enabled(self):
+            base = CREATIVE
         if mood == "emotional_vent":
             base += " 心情动态也要克制，只写公开可见的余味，不要写成控诉或伤感散文。"
         voice = ""

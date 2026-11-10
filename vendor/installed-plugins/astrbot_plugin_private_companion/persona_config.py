@@ -319,6 +319,8 @@ IDENTITY_KEYS = frozenset(
         "default_style",
         "reply_style_prompt",
         "enable_persona_voice_channels",
+        "persona_interaction_orientation",
+        "persona_peer_relationship_prompt",
         "persona_conversation_voice_prompt",
         "persona_creative_voice_prompt",
         "persona_planning_voice_prompt",

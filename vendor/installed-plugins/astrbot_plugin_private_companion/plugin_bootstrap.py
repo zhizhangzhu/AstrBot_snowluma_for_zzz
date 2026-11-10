@@ -537,6 +537,10 @@ def _initialize_core_and_relationship_config(self: Any, c: Any) -> None:
     reply_style_raw = _flat_get(c, "reply_style_prompt", None)
     self.reply_style_prompt = DEFAULT_REPLY_STYLE_PROMPT if reply_style_raw is None else str(reply_style_raw).strip()
     self.enable_persona_voice_channels = self._cfg_bool(c, "enable_persona_voice_channels", True)
+    self.persona_interaction_orientation = self._cfg_str(c, "persona_interaction_orientation", "persona")
+    if self.persona_interaction_orientation not in {"persona", "peer"}:
+        self.persona_interaction_orientation = "persona"
+    self.persona_peer_relationship_prompt = self._cfg_str(c, "persona_peer_relationship_prompt", "")
     self.persona_conversation_voice_prompt = self._cfg_str(c, "persona_conversation_voice_prompt", "")
     self.persona_creative_voice_prompt = self._cfg_str(c, "persona_creative_voice_prompt", "")
     self.persona_planning_voice_prompt = self._cfg_str(c, "persona_planning_voice_prompt", "")
