@@ -1798,6 +1798,15 @@ class ProactiveMixin(UserRestGateMixin):
                     config_value = _safe_int(getter("max_daily_messages", runtime_value), runtime_value, 0, self._PROACTIVE_DAILY_QUOTA_MAX)
                 except Exception:
                     config_value = runtime_value
+        if runtime_value > 0 and override != 0 and isinstance(user, dict):
+            contact = user.get("contact_preference")
+            if (
+                isinstance(contact, dict) and any(contact.get(k) for k in ("active", "no_contact", "backoff"))
+            ) or str(contact or "").strip().lower() in {"no_contact", "backoff", "avoid", "stop"}:
+                return "停止联系偏好生效，主动交流暂停（配置的每日上限未关闭）"
+            interaction = user.get("current_interaction")
+            if isinstance(interaction, dict) and interaction.get("expression_band") in {"avoidant", "hurt"}:
+                return "当前互动状态暂停主动交流（配置的每日上限未关闭）"
         return f"每日上限为 0（用户覆盖={override}，运行中全局={runtime_value}，配置全局={config_value}）"
 
     def _effective_user_idle_minutes(self, user: dict[str, Any]) -> int:

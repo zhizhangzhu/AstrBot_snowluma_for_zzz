@@ -436,7 +436,7 @@
         "private_reading.py": "25fc38782e436f95a93dfc67ac7475dd3fa80f421b1a434961e48d1ff0f896f4",
         "private_reply_health.py": "8ff491d6ff361c9917b121f88b635c759a5585452c3f93d8e3dc9ae838ad0396",
         "private_scope_isolation.py": "781ca1136e383420f3b2e1a716c3ab48c0d69a87c31e0d2a37cda24ea36299f6",
-        "proactive.py": "d4626ae258d9515d19fbd6f27c293640e919ff190b07708507428894c8bb0cbd",
+        "proactive.py": "69f2bdcaaecc069c5298d3d4dcc9f27ddffc916887300ca194c1345564cb0243",
         "proactive_chat_runtime_bridge.py": "2ff4aa59ad7c7c3acea95565fb0152f667b152871028e617eab0c2cf442a4889",
         "proactive_engine.py": "70af4e700420ac4b065368a26de6023f7e3ea401f3914c40567e8303986ab04c",
         "proactive_message.py": "b1281967dcede45491c90bdac4a56169c3b8ab1d64f546c97baaaf83898e084c",
@@ -553,7 +553,7 @@
         "unified_person_registry.py": "1d217b1b7ccbcf6522dc3d7584f7118677d8e1aa4b9d721b9bc47a545e6d5cc4",
         "unified_profile_contract.py": "0af743116c50c25e13157c2c5cdcd8ccfd80299bc41de63f4fc8130f8a927de4",
         "unified_profile_service.py": "af786f37bc21196bf2d884226b5cf46b2c0a983df9274ce2cabf6412b9ff4f4e",
-        "user_memory.py": "993c24e4eeda7ecfe25182714ddb3c90de9b0454a4044e7551cf59e1e96c4a39",
+        "user_memory.py": "201a946e0587e9f29126d0f1c1e6960df72d52b52a8b961ca5cc5aa93be7e868",
         "user_rest_gate.py": "871bd6070d5ac64584b8ec51fcfe8143e83d839829c01bf3ed53c0123f1aab26",
         "wake_message_context.py": "43485190709ff925c0c0cbeac7d1e21a36d6cc3e8e4d9bcfcfe1eab0872716e4",
         "wardrobe.py": "09aac472019892a533b7f094f285fdbad9fb528e2b29458256ff9a2a533dda73",
@@ -565,7 +565,8 @@
         "worldbook.py": "94c6fbd8f0782b477cedd2374c4dea7c1553b7ad575fa0e7310a5f214972a774",
         "qzone_persona.py": "4168572e90b788713d80dc874c9d2782f52dea3676edb20cee5c4ebf2137df6c",
         "outbound_rules.py": "122248520858eb7f8f81dcf3268dae8fde5ed8a68c4d223daf823b15f2a108c7",
-        "peer_expression.py": "0b049e024e8b8236b203e3885524fa1ef90884e5f464b73328d532f02c9f5a1c"
+        "peer_expression.py": "0b049e024e8b8236b203e3885524fa1ef90884e5f464b73328d532f02c9f5a1c",
+        "contact_boundary.py": "d46c287c633f0396e7d19fd55e33dc7a8c691ca6e977bf0de6584484fce2355b"
       }
     },
     "astrbot_plugin_memory_companion": {

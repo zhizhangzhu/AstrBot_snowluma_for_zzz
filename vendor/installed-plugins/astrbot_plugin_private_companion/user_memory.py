@@ -4,6 +4,8 @@ UserMemoryMixin — 从 main.py 重新拆分出的用户记忆系统
 """
 from __future__ import annotations
 
+from .contact_boundary import explicit_no_contact_request
+
 import asyncio
 import base64
 import gc
@@ -5830,14 +5832,11 @@ class UserMemoryMixin:
         weak_boundary = bool(re.search(r"(别|不要|讨厌|烦)", cleaned))
         soft_play_boundary = self._is_soft_playful_boundary(cleaned)
         playful_or_ambiguous = self._is_playful_or_ambiguous_boundary(cleaned)
+        # A preference about words, nicknames or one action must not disable all contact.
         durable_boundary = bool(
-            target_hint
-            and not third_party_hint
+            not third_party_hint
             and not playful_or_ambiguous
-            and re.search(
-                r"(?:以后|之后).{0,8}(?:别|不要)|(?:别再|不要再|不许).{0,12}(?:这样|烦|吵|打扰|靠近|贴|撒娇|叫我|问我|说话)|(?:不想|不愿).{0,10}(?:理你|跟你聊|继续聊)|(?:离我远点|别打扰我|别靠近|别贴|别撒娇)",
-                cleaned,
-            )
+            and explicit_no_contact_request(cleaned)
         )
         single_turn_boundary = bool(
             target_hint
