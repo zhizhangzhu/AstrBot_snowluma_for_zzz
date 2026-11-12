@@ -38,21 +38,52 @@ try {
     $request = $line | ConvertFrom-Json
     Write-Host "`n--- Command $($request.id) ---" -ForegroundColor Yellow
     Write-Host $request.script
-    $engine = [PowerShell]::Create()
+    $child = New-Object System.Diagnostics.Process
+    $childStarted = $false
+    $commandFile = $null
     try {
-      [void]$engine.AddScript("`$ErrorActionPreference='Stop';`n" + $request.script)
-      $running = $engine.BeginInvoke()
-      if (-not $running.AsyncWaitHandle.WaitOne([int]$request.timeout * 1000)) {
-        $engine.Stop()
-        $response = @{ id=$request.id; status='unknown'; error='Execution timed out; external processes may still be running.' }
+      $command = "`$ErrorActionPreference='Stop';`$ProgressPreference='SilentlyContinue';[Console]::OutputEncoding=New-Object Text.UTF8Encoding(`$false);`$OutputEncoding=[Console]::OutputEncoding;try { & {`n" + $request.script + "`n} | Out-String -Width 200 | Write-Output;exit 0 } catch { [Console]::Error.WriteLine([string]`$_);exit 1 }"
+      $commandFile = [IO.Path]::Combine([IO.Path]::GetTempPath(), 'AstrBotMaintenanceCommand-'+[guid]::NewGuid().ToString('N')+'.ps1')
+      [IO.File]::WriteAllText($commandFile,$command,(New-Object Text.UTF8Encoding($true)))
+      $child.StartInfo = New-Object Diagnostics.ProcessStartInfo
+      $child.StartInfo.FileName = [IO.Path]::Combine($PSHOME,'powershell.exe')
+      $child.StartInfo.Arguments = "-NoProfile -NonInteractive -ExecutionPolicy RemoteSigned -File `"$commandFile`""
+      $child.StartInfo.UseShellExecute = $false
+      $child.StartInfo.CreateNoWindow = $true
+      $child.StartInfo.RedirectStandardInput = $true
+      $child.StartInfo.RedirectStandardOutput = $true
+      $child.StartInfo.RedirectStandardError = $true
+      $child.StartInfo.StandardOutputEncoding = New-Object Text.UTF8Encoding($false)
+      $child.StartInfo.StandardErrorEncoding = New-Object Text.UTF8Encoding($false)
+      if (-not $child.Start()) { throw 'Command process did not start.' }
+      $childStarted = $true
+      $child.StandardInput.Close()
+      $stdout = $child.StandardOutput.ReadToEndAsync()
+      $stderr = $child.StandardError.ReadToEndAsync()
+      if (-not $child.WaitForExit([int]$request.timeout * 1000)) {
+        # Kill this command's tree only; do not stop the SSH transport or unrelated apps.
+        $killInfo = New-Object Diagnostics.ProcessStartInfo
+        $killInfo.FileName = [IO.Path]::Combine($env:SystemRoot,'System32\taskkill.exe')
+        $killInfo.Arguments = "/PID $($child.Id) /T /F"
+        $killInfo.UseShellExecute = $false
+        $killInfo.CreateNoWindow = $true
+        $killer = [Diagnostics.Process]::Start($killInfo)
+        [void]$killer.WaitForExit(3000)
+        $killer.Dispose()
+        if (-not $child.HasExited) { $child.Kill() }
+        $response = @{ id=$request.id; status='unknown'; error='Command timed out; termination was requested for its process tree. Check any partial changes before retrying.' }
       } else {
-        $output = $engine.EndInvoke($running) | Out-String -Width 200
+        $output = if ($stdout.Wait(2000)) { $stdout.Result } else { '[Output pipe remains open after command exit.]' }
+        $detail = if ($stderr.Wait(2000)) { $stderr.Result } else { '[Error pipe remains open after command exit.]' }
         if ($output.Length -gt 16384) { $output=$output.Substring(0,16384) }
         $response = @{ id=$request.id; status='completed'; output=$output }
-        if ($engine.HadErrors) { $response.status='failed'; $detail=($engine.Streams.Error | Out-String); $response.error=$detail.Substring(0,[Math]::Min(16384,$detail.Length)) }
+        if ($child.ExitCode -ne 0) { $response.status='failed'; $response.error=$detail.Substring(0,[Math]::Min(16384,$detail.Length)) }
       }
     } catch { $response = @{ id=$request.id; status='failed'; error=$_.Exception.Message } }
-    finally { $engine.Dispose() }
+    finally {
+      if ($null -ne $child) { if ($childStarted -and -not $child.HasExited) { $child.Kill() }; $child.Dispose() }
+      if ($commandFile -and [IO.File]::Exists($commandFile)) { [IO.File]::Delete($commandFile) }
+    }
     $process.StandardInput.WriteLine((ConvertTo-MaintenanceJson $response)); $process.StandardInput.Flush()
   }
 } finally {
