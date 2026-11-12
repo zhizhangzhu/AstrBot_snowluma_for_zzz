@@ -25,6 +25,7 @@ def snapshot_for(peer, observations, *, light=False):
     return {"state": peer.state, "recent_observations": observations[-(3 if light else 8):],
             "worlds": [{"id": w["id"], "supported": w.get("supported"),
                         "environment": str(w.get("environment", ""))[:4000] if w["id"] == "desktop-pet" and not light else "",
+                        "appearance": str(w.get("appearance", ""))[:1600] if w["id"] == "desktop-pet" else "",
                         "tool_count": len(w.get("tools", [])),
                         "tools": [{"name": t["name"], **({"description": t["description"][:160]} if not light else {})}
                                   for t in w.get("tools", [])[:12]]} for w in peer.catalog["worlds"]]}
