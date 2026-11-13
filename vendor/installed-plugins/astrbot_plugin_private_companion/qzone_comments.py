@@ -411,6 +411,9 @@ class QzoneCommentMixin:
         reply = self._qzone_clean_comment_reply_text(reply_text, getattr(comment, "name", ""))
         if not reply:
             raise RuntimeError("评论回复内容为空")
+        from .qzone_native_actions import reply as native_reply
+        sent=await native_reply(self,event,post,comment,_single_line(reply,120))
+        if sent is not None:return sent
         return await self._qzone_comment_post(event, post, content=_single_line(reply, 120))
 
     @staticmethod
@@ -534,6 +537,8 @@ class QzoneCommentMixin:
                     "content": content,
                 })
         state = self._qzone_state_dict()
+        from .qzone_interactions import migrate_comment_state
+        migrate_comment_state(self,state,posts,own_uin)
         replied = set(self._qzone_trim_id_list(state.get("comment_inbox_replied_ids"), limit=300))
         replied_keys = set(self._qzone_trim_id_list(state.get("comment_inbox_replied_keys"), limit=300))
         unknown = set(self._qzone_trim_id_list(state.get("comment_inbox_delivery_unknown_ids"), limit=100))
@@ -565,6 +570,11 @@ class QzoneCommentMixin:
             reply = str(decision.get("reply") or "")
         if decision.get("decision") != "reply" or not reply:
             return {"status": "skipped", "message": "这条评论不适合公开回复。", "comment": best["content"]}
+        state['comment_inbox_delivery_unknown_ids'] = self._qzone_trim_id_list(
+            list(unknown)+best['id_candidates'],limit=100)
+        state['comment_inbox_delivery_unknown_keys'] = self._qzone_trim_id_list(
+            list(unknown_keys)+[best['comment_key']],limit=100)
+        self._save_data_sync(sections={'qzone_integration'})
         try:
             sent = await self._qzone_reply_to_comment(event, best["post"], best["comment"], reply)
         except Exception as exc:
@@ -577,6 +587,8 @@ class QzoneCommentMixin:
             if self._qzone_auth_failure_message(exc):
                 self._qzone_mark_auth_failure(str(exc), source="comment_tool", state=state, save=False)
             if retryable:
+                state['comment_inbox_delivery_unknown_ids'] = list(unknown)
+                state['comment_inbox_delivery_unknown_keys'] = list(unknown_keys)
                 retry_ids = self._qzone_trim_id_list(state.get("comment_inbox_retry_ids"), limit=100)
                 retry_keys = self._qzone_trim_id_list(state.get("comment_inbox_retry_keys"), limit=100)
                 state["comment_inbox_retry_ids"] = self._qzone_trim_id_list(retry_ids + best["id_candidates"], limit=100)
@@ -596,6 +608,8 @@ class QzoneCommentMixin:
             return {"status": "error", "message": _single_line(exc, 160), "retryable": retryable}
         now = _now_ts()
         self._qzone_note_comment_inbox_sent(state, best["post"], best["comment"], sent, now=now)
+        from .qzone_interactions import remember_interaction
+        await remember_interaction(self,best['post'],best['comment'],'reply',sent)
         state["comment_inbox_replied_ids"] = self._qzone_trim_id_list(
             list(state.get("comment_inbox_replied_ids") or []) + best["id_candidates"], limit=300
         )
@@ -648,18 +662,35 @@ class QzoneCommentMixin:
         retry_key_set: set[str] = set()
         unknown_set: set[str] = set()
         unknown_key_set: set[str] = set()
+        related = bool(runtime_persona_setting(self, 'qzone_use_related_notifications', False))
         interval_seconds = max(5, _safe_int(runtime_persona_setting(self, "qzone_comment_inbox_interval_minutes", 60), 60, 5, 1440)) * 60
-        if now - _safe_float(state.get("last_comment_inbox_checked_at"), 0) < interval_seconds:
+        checked = state.get('last_related_poll_attempt_at', 0) if related else state.get('last_comment_inbox_checked_at', 0)
+        if (related or state.get('native_comment_identity_version') == 2) and now - _safe_float(checked,0) < interval_seconds:
             return
-        if now - _safe_float(state.get("last_comment_inbox_failed_at"), 0) < 15 * 60:
+        if (not related and state.get('native_comment_identity_version') == 2
+                and now - _safe_float(state.get("last_comment_inbox_failed_at"), 0) < 15 * 60):
             return
         try:
-            cookie_header = await self._qzone_get_cookies(None)
-            ctx = self._qzone_context_from_cookies(cookie_header)
-            own_uin = _safe_int(ctx.get("uin"), 0, 0)
-            recent_posts = _safe_int(runtime_persona_setting(self, "qzone_comment_inbox_recent_posts", 5), 5, 1, 20)
             max_replies = _safe_int(runtime_persona_setting(self, "qzone_comment_inbox_max_replies_per_tick", 1), 1, 1, 5)
-            posts = await self._qzone_query_feeds(None, target_id=str(own_uin), pos=0, num=recent_posts, with_detail=True)
+            if related:
+                from .bot_accounts import account_binding
+                from .qzone_notifications import notified_posts
+                binding=account_binding(self)
+                if not binding:raise RuntimeError('通知账号未绑定')
+                own_uin=int(binding['bot_id'])
+                state['last_related_poll_attempt_at']=now
+                self._save_data_sync(sections={'qzone_integration'})
+                posts=await notified_posts(self,own_uin)
+            else:
+                cookie_header = await self._qzone_get_cookies(None)
+                ctx = self._qzone_context_from_cookies(cookie_header)
+                own_uin = _safe_int(ctx.get("uin"), 0, 0)
+                recent_posts = _safe_int(runtime_persona_setting(self, "qzone_comment_inbox_recent_posts", 5), 5, 1, 20)
+                from .qzone_native_actions import inbox_posts
+                posts = await inbox_posts(self,own_uin,recent_posts)
+            from .qzone_interactions import observe_interactions, migrate_comment_state
+            migrate_comment_state(self,state,posts,own_uin)
+            memory_ok = await observe_interactions(self,posts,own_uin)
             observed: list[tuple[Any, Any, str, str, list[str], bool, bool]] = []
             for post in posts:
                 for comment in list(getattr(post, "comments", []) or []):
@@ -713,6 +744,8 @@ class QzoneCommentMixin:
                 and not seen_keys
                 and not replied_ids
                 and not replied_keys
+                and not retry_ids
+                and not retry_keys
             )
             if history_lost_after_init:
                 state["comment_inbox_seen_ids"] = self._qzone_trim_id_list(observed_ids, limit=500)
@@ -736,8 +769,15 @@ class QzoneCommentMixin:
                 and not any(candidate_id in unknown_set for candidate_id in id_candidates)
                 and comment_key not in unknown_key_set
                 and not is_self_comment
-                and not author_recently_replied
+                and (_safe_float(getattr(comment, 'create_time', 0), 0) >= state.get('native_comment_migration_cutoff', 0)
+                     or comment_key in retry_key_set)
             ]
+            # Persist the pending queue before marking observations seen.
+            for _, _, _, key, ids in candidates:
+                retry_set.update(ids)
+                retry_key_set.add(key)
+            state['comment_inbox_retry_ids'] = self._qzone_trim_id_list(list(retry_set), limit=100)
+            state['comment_inbox_retry_keys'] = self._qzone_trim_id_list(list(retry_key_set), limit=100)
             if observed_ids or observed_keys:
                 state["comment_inbox_seen_ids"] = self._qzone_trim_id_list(seen_ids + observed_ids, limit=500)
                 state["comment_inbox_seen_keys"] = self._qzone_trim_id_list(seen_keys + observed_keys, limit=500)
@@ -750,18 +790,26 @@ class QzoneCommentMixin:
             last_reason = ""
             sent_text = ""
             for post, comment, comment_id, comment_key, id_candidates in candidates:
-                if replies >= max_replies:
-                    break
+                if replies >= max_replies or self._qzone_author_post_recently_replied(state,post,comment,now=now):
+                    retry_set.update(id_candidates)
+                    retry_key_set.add(comment_key)
+                    continue
                 decision = await self._qzone_decide_comment_reply(post, comment, own_uin=own_uin)
                 if decision.get("decision") != "reply":
                     skipped += 1
                     last_reason = _single_line(decision.get("reason"), 60)
+                    retry_set.difference_update(id_candidates)
+                    retry_key_set.discard(comment_key)
                     continue
                 state["last_comment_inbox_checked_at"] = now
                 state["last_comment_inbox_status"] = f"replying:sending:{_single_line(comment_id or comment_key, 80)}"
                 state["last_comment_inbox_reply_comment_id"] = comment_id
                 state["last_comment_inbox_reply_comment_key"] = comment_key
                 state["last_comment_inbox_reply_author"] = _single_line(getattr(comment, "name", ""), 40) or _single_line(getattr(comment, "uin", ""), 40)
+                unknown_set.update(id_candidates)
+                unknown_key_set.add(comment_key)
+                state['comment_inbox_delivery_unknown_ids'] = self._qzone_trim_id_list(list(unknown_set), limit=100)
+                state['comment_inbox_delivery_unknown_keys'] = self._qzone_trim_id_list(list(unknown_key_set), limit=100)
                 self._save_data_sync(sections={"qzone_integration"})
                 try:
                     sent_text = await self._qzone_reply_to_comment(None, post, comment, str(decision.get("reply") or ""))
@@ -775,6 +823,8 @@ class QzoneCommentMixin:
                     if self._qzone_auth_failure_message(exc):
                         self._qzone_mark_auth_failure(str(exc), source="comment_inbox", state=state, save=False)
                     if retryable:
+                        unknown_set.difference_update(id_candidates)
+                        unknown_key_set.discard(comment_key)
                         for candidate_id in id_candidates:
                             if candidate_id:
                                 retry_set.add(candidate_id)
@@ -815,6 +865,8 @@ class QzoneCommentMixin:
                 for candidate_id in id_candidates:
                     unknown_set.discard(candidate_id)
                 self._qzone_note_comment_inbox_sent(state, post, comment, sent_text, now=now)
+                from .qzone_interactions import remember_interaction
+                await remember_interaction(self,post,comment,'reply',sent_text)
                 replies += 1
                 last_reason = _single_line(decision.get("reason"), 60) or "已回复"
                 state["comment_inbox_replied_ids"] = self._qzone_trim_id_list(list(replied_set), limit=300)
@@ -862,6 +914,9 @@ class QzoneCommentMixin:
             if replies:
                 state["last_comment_inbox_reply_at"] = now
             state.pop("last_comment_inbox_failed_at", None)
+            if related:
+                from .qzone_notifications import finish
+                finish(self,posts,memory_ok=memory_ok is not False)
             self._save_data_sync(sections={"qzone_integration"})
         except Exception as exc:
             reason = _single_line(exc, 160)

@@ -20,10 +20,10 @@ def bound_client(owner,event=None):
 
 async def call(client,action,**params):
     # Exactly one transport invocation, including after an uncertain write.
-    try:raw=await asyncio.wait_for(client.call_action(action,**params),timeout=15)
+    try:raw=await asyncio.wait_for(client.call_action(action,**params),timeout=30 if action=='get_qzone_notifications' else 15)
     except asyncio.CancelledError:raise
     except Exception as exc:
-        write=action=='like_qzone'
+        write=action in {'like_qzone', 'comment_qzone', 'reply_qzone_comment'}
         raise QzoneIntegrationError('投递结果未知' if write else '原生读取失败',type(exc).__name__,
             retryable=not write,delivery_unknown=write) from exc
     # AioCQHTTP unwraps a successful OneBot {data:null} to None; failed
@@ -62,7 +62,7 @@ async def query(owner,client,target,pos,num,with_detail):
             if seen is not None and getattr(seen,'like_state_known',False):post.liked=bool(getattr(seen,'liked',False))
     except QzoneIntegrationError:pass
     if with_detail:
-        for post in posts[:1]:
+        for post in posts:
             await enrich_detail(owner,client,post)
     return posts
 
@@ -72,7 +72,26 @@ async def enrich_detail(owner,client,post):
     if not isinstance(detail,dict) or str(detail.get('tid'))!=post.tid:
         raise QzoneIntegrationError('原生读取失败','说说详情与目标不一致')
     post.raw.update(detail);post.raw['_snowluma_detail_loaded']=True
-    post.comments=owner._qzone_parse_comments_from_msg({'commentlist':detail.get('comments',[])})
+    rows=list(detail.get('comments',[]))
+    # The service may cap each page below the requested size.
+    for _ in range(9):
+        if not rows or len(rows)>=int(detail.get('comment_num',0)):break
+        page=await call(client,'get_qzone_msg_detail',target_uin=int(post.uin),tid=post.tid,pos=len(rows),num=30)
+        if not isinstance(page,dict) or str(page.get('tid'))!=post.tid:
+            raise QzoneIntegrationError('原生读取失败','评论分页归属不一致')
+        extra=page.get('comments',[])
+        known={str(r.get('comment_id')) for r in rows}
+        extra=[r for r in extra if isinstance(r,dict) and str(r.get('comment_id')) not in known]
+        if not extra:break
+        rows.extend(extra)
+    flat=[]
+    for row in rows:
+        flat.append(row)
+        for reply in row.get('replies',[]):
+            flat.append({**reply,'comment_id':str(row['comment_id'])+':'+str(reply['comment_id']),
+                         'parent_comment_id':row['comment_id'],'parent_comment_uin':row['uin']})
+    post.comments=owner._qzone_parse_comments_from_msg({'tid':post.tid,'commentlist':flat})
+    post.raw['_snowluma_comments_complete']=len(rows)>=int(detail.get('comment_num',0))
 
 
 async def enrich_selected(owner,event,post):
@@ -106,3 +125,40 @@ async def like(owner,client,post):
     verification=await verify_like(client,uin,tid)
     if verification['verified']:post.liked=True
     return {'success':True,'transport':'snowluma_native','verify_message':verification.get('message',''),**verification}
+
+
+async def reply(owner,event,post,comment,text):
+    client=bound_client(owner,event)
+    if client is None:return None
+    raw=getattr(comment,'raw',{}) or {}
+    parent=raw.get('parent_comment_id')
+    cid=parent if parent is not None else raw.get('comment_id',raw.get('commentid'))
+    author=raw.get('parent_comment_uin') if parent is not None else getattr(comment,'uin',0)
+    if cid is None or not str(cid) or not str(author).isdigit() or int(author)<=0:
+        raise QzoneIntegrationError('回复目标无效','缺少已核验的父评论标识')
+    target={}
+    if parent is not None and str(comment.uin)!=str(author):
+        target={'reply_uin':int(comment.uin),'reply_name':str(comment.name)}
+    await call(client,'reply_qzone_comment',target_uin=int(post.uin),tid=post.tid,
+               comment_id=str(cid),comment_uin=int(author),content=text,**target)
+    return text
+
+
+async def inbox_posts(owner,own_uin,num):
+    """One failed older post must not block successful comment observations."""
+    client=bound_client(owner)
+    if client is None:
+        return await owner._qzone_query_feeds(None,target_id=str(own_uin),pos=0,num=num,with_detail=True)
+    posts=await query(owner,client,str(own_uin),0,num,False)
+    loaded=[];errors=[];last_error=None
+    for post in posts:
+        try:
+            await enrich_detail(owner,client,post)
+            loaded.append(post)
+        except QzoneIntegrationError as exc:
+            errors.append({'tid':post.tid,'stage':exc.stage})
+            last_error=exc
+    owner._qzone_state_dict()['comment_inbox_read_errors']=errors
+    if posts and not loaded:
+        raise last_error
+    return loaded

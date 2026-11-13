@@ -52,7 +52,8 @@ class QzoneRuntimeMixin:
         if binding is not None:
             if not binding.get("bot_id") or not binding.get("adapter_id"):
                 return ""
-            return str(getattr(self, "_active_persona_scope", lambda: "")() or "").strip()
+            active = str(getattr(self, "_active_persona_scope", lambda: "")() or "").strip()
+            return active or str(getattr(self, '_primary_persona_id', lambda: '')() or '').strip()
         getter = getattr(self, "_primary_persona_id", None)
         if callable(getter):
             try:
@@ -77,6 +78,7 @@ class QzoneRuntimeMixin:
             return True
         active_getter = getattr(self, "_active_persona_scope", None)
         active = str(active_getter() if callable(active_getter) else "").strip()
+        active = active or str(getattr(self, '_primary_persona_id', lambda: '')() or '').strip()
         primary = self._qzone_primary_persona_id()
         return bool(primary and active == primary)
 

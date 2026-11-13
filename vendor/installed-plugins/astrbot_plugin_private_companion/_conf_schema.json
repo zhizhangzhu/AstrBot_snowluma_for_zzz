@@ -742,7 +742,10 @@
       "persona_interaction_orientation": {
         "description": "相处表达方式",
         "type": "string",
-        "options": ["persona", "peer"],
+        "options": [
+          "persona",
+          "peer"
+        ],
         "hint": "persona 沿用既有人格表达；peer 强调平等交流、双向分享和自主表达，放开固定话术结构。仅影响本人格的表达，不改变工具权限、勿扰、频率或任务约定。",
         "default": "persona"
       },
@@ -8686,16 +8689,16 @@
       "enable_qzone_comment_inbox": {
         "description": "空间评论收件箱",
         "type": "bool",
-        "hint": "默认关闭。开启后会低频拉取自己最近说说详情，记录已见评论，并由模型判断是否需要用追加评论方式公开回复新评论。首次开启只记录现有评论，不回复旧积压。",
+        "hint": "开启后检查空间互动并判断是否需要公开回复。通知模式读取与我相关；旧模式扫描最近说说。首次开启只记录已有通知或评论，避免回复历史积压。",
         "default": false,
         "condition": {
           "enable_qzone_integration": true
         }
       },
       "qzone_comment_inbox_interval_minutes": {
-        "description": "评论检查间隔（分钟）",
+        "description": "空间互动检查间隔（分钟）",
         "type": "int",
-        "hint": "两次自动检查自己说说评论之间的最小间隔。",
+        "hint": "通知模式下两次读取与我相关的最小间隔；旧模式下为评论扫描间隔。",
         "slider": {
           "min": 5,
           "max": 1440,
@@ -8717,7 +8720,8 @@
         },
         "default": 5,
         "condition": {
-          "enable_qzone_comment_inbox": true
+          "enable_qzone_comment_inbox": true,
+          "qzone_use_related_notifications": false
         }
       },
       "qzone_comment_inbox_max_replies_per_tick": {
@@ -8744,6 +8748,15 @@
           "step": 1
         },
         "hint": "含首次请求，默认3次；只针对GET/HEAD连接失败、超时和502/503/504，在原总超时内重新连接。登录与权限错误不重试，点赞/评论/发布不重发。"
+      },
+      "qzone_use_related_notifications": {
+        "description": "从与我相关读取互动通知",
+        "type": "bool",
+        "default": false,
+        "hint": "启用后检查与我相关通知，只在新通知出现时读取对应动态；不再定时扫描最近说说。首次切换只建立已有通知基线。",
+        "condition": {
+          "enable_qzone_comment_inbox": true
+        }
       }
     }
   },
@@ -16266,5 +16279,11 @@
     "description": "全天计划条目数",
     "hint": "全天意向条目数量，保留休息与空白时间，执行前仍检查权限、冷却和真实条件。",
     "persona_scope": "persona"
+  },
+  "qzone_use_related_notifications": {
+    "description": "Legacy flat config: 从与我相关读取互动通知",
+    "type": "bool",
+    "default": false,
+    "invisible": true
   }
 }

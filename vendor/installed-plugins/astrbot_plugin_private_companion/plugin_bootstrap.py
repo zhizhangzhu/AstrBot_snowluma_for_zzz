@@ -2208,6 +2208,7 @@ def _initialize_group_and_provider_config(self: Any, c: Any) -> None:
     self.qzone_generated_image_probability = self._cfg_unit_interval(c, "qzone_generated_image_probability", 0.25, 0.0)
     self.qzone_publish_image_style_prompt = self._cfg_str(c, "qzone_publish_image_style_prompt", "")
     self.enable_qzone_comment_inbox = self._cfg_bool(c, "enable_qzone_comment_inbox", False)
+    self.qzone_use_related_notifications = self._cfg_bool(c, "qzone_use_related_notifications", False)
     self.qzone_comment_inbox_interval_minutes = self._cfg_int(c, "qzone_comment_inbox_interval_minutes", 60, 5, 1440)
     self.qzone_comment_inbox_recent_posts = self._cfg_int(c, "qzone_comment_inbox_recent_posts", 5, 1, 20)
     self.qzone_comment_inbox_max_replies_per_tick = self._cfg_int(c, "qzone_comment_inbox_max_replies_per_tick", 1, 1, 5)

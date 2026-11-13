@@ -1,0 +1,46 @@
+{
+  "feature": "Qzone scope=1 related notifications; primary Bot interval 5 minutes",
+  "files": {
+    "data/astrbot/plugins/astrbot_plugin_private_companion/qzone_comments.py": {
+      "before": "29539cd48ab747f14f7e0942636b75b63ff82baf7b259550ce38b38ce9fe3ecc",
+      "after": "e9e2fc07414d9308e2c411f3287afa086a5167301587487cc0b6aec0d0999fe0"
+    },
+    "data/astrbot/plugins/astrbot_plugin_private_companion/qzone_native_actions.py": {
+      "before": "004ab2bc096d5c360381332513860ba61a49d103282548c4d396705c661034e7",
+      "after": "34ad2e87aa336901bc588d1097a2cec8768040a8242ae87dde2d4c85031e2484"
+    },
+    "data/astrbot/plugins/astrbot_plugin_private_companion/qzone_interactions.py": {
+      "before": "0b6cfb433f010ee57792604e6e5b6924151c930087684a79b582dbe0428b9cb1",
+      "after": "a0ed36e447218dadc4fdcb06c45b704567b015fd5016e9d0f0db252b2e586da2"
+    },
+    "data/astrbot/plugins/astrbot_plugin_private_companion/qzone_notifications.py": {
+      "before": null,
+      "after": "7edfdd0575f89b424ced14e7cec6304e8f4380a3e77d79e7481fb2e74f876c2d"
+    },
+    "data/astrbot/plugins/astrbot_plugin_private_companion/daily_state.py": {
+      "before": "b90f8914d8ac1d8a98732345d33bbafb60e110259561384f10932e2689caeee2",
+      "after": "8b6b4d8a733dc02bc1fbf7db0f9282edeca5660496d10c7bff8f9e0616ff811c"
+    },
+    "data/astrbot/plugins/astrbot_plugin_private_companion/persona_config.py": {
+      "before": "7ef06b7731c4038859cfa078e8d7577b3478a9870a3671d858a52e50fe987160",
+      "after": "5ceaeff3c089099b43bdc8449ef70125613fcbd3176e545a8e2ed891cf6e6142"
+    },
+    "data/astrbot/plugins/astrbot_plugin_private_companion/plugin_bootstrap.py": {
+      "before": "35dd12f59e774eee798eb9f658df86261446dd74f30f12c9e0f336efadb52460",
+      "after": "c67c1c4da0b3fda223468de8bc93972fa20a8ec16e38a67a18b9ac290ea04d0b"
+    },
+    "data/astrbot/plugins/astrbot_plugin_private_companion/_conf_schema.json": {
+      "before": "804139af6b671bcf2e719b3562c2a93e6434aff67493970bb3a60747081a6303",
+      "after": "0652ca9446b74a190c62b87493bcfee45fd4db426dfd113072767a4ad4a44b57"
+    },
+    "runtime/snowluma-native/index.mjs": {
+      "before": "9d9e4e9629fcc95ee8d7b8f947541b5d8f160358ecbb24d1d4686d3079a48be2",
+      "after": "c35e8f7cde36ebe8e8197dbe5e2c2c93f7acf45eb708d7949aa9841627bce1ff"
+    }
+  },
+  "native_input_sha256": "28a2970ac5d393cb70201d08c5afe196f13121e2a5361f30ef04818d2fe39883",
+  "native_patch_files": {
+    "overrides/qzone-interactions/native-functions.js": "a3ca9f826209e133ec9ea2bd712ddf5a62204a2a3ce061451334945660794080",
+    "overrides/qzone-interactions/native-actions.js": "842318c61eb272f71181ce5463b998a82cc6738667320ab0e439ddb962c75c45"
+  }
+}

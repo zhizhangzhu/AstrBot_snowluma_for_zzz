@@ -18860,6 +18860,14 @@ class DailyStateMixin(DailyStateTickMixin):
 
 
     async def _tick(self):
+        # Notification polling is due every scheduler cycle, not alternating maintenance batches.
+        if runtime_persona_setting(self, 'qzone_use_related_notifications', False):
+            try:
+                await self._maybe_process_qzone_comment_inbox()
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.warning('QQ space notification poll failed: %s', type(exc).__name__)
         try:
             await self._poll_qzone_watch()
         except asyncio.CancelledError:
