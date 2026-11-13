@@ -340,3 +340,35 @@ async def test_observations_are_not_left_in_the_recoverable_chat_queue(terminal)
     await socket.send_json(frame('event','observation-one',{'world':'desktop-pet','text':'A setting changed.','trigger':'piggyback'}))
     assert (await socket.receive_json())['payload']['status']=='observed'
     assert store.queued_events(binding)==[]
+
+@pytest.mark.asyncio
+async def test_paired_body_images_update_over_wss_without_crossing_personas(terminal):
+    import base64
+    import hashlib
+    import io
+    from PIL import Image
+    from astrbot.core.provider.entities import ProviderRequest
+    from plugins.astrbot_plugin_desktop_pet.self_portrait import attach_self_portrait
+    from plugins.astrbot_plugin_desktop_pet.presentation import snapshot_for
+    hub,store,connect,a,b,*_=terminal
+    left,right=await connect(a),await connect(b)
+    def picture(color,scheme):
+        output=io.BytesIO();Image.new('RGBA',(24,32),color).save(output,format='PNG');raw=output.getvalue()
+        return {'mime':'image/png','base64':base64.b64encode(raw).decode(),'sha256':hashlib.sha256(raw).hexdigest(),
+                'width':24,'height':32,'figure_id':'sample','figure_version':'1','scheme':scheme}
+    async def change(socket,pic,identifier):
+        await socket.send_json(frame('catalog',identifier,{'worlds':[{'id':'desktop-pet','supported':True,'tools':[],'portrait':pic}]}))
+        await socket.send_json(frame('ping','barrier-'+identifier,{}))
+        assert (await socket.receive_json())['type']=='pong'
+    red,blue=picture('red','a'),picture('blue','b')
+    await change(left,red,'left');await change(right,blue,'right')
+    first=ProviderRequest(prompt='Hello');second=ProviderRequest(prompt='Hello')
+    attach_self_portrait(first,hub.peer(a));attach_self_portrait(second,hub.peer(b))
+    assert first.extra_user_content_parts[-1].image_url.url!=second.extra_user_content_parts[-1].image_url.url
+    changed=picture('green','changed');await change(left,changed,'changed')
+    attach_self_portrait(first,hub.peer(a))
+    assert len(first.extra_user_content_parts)==2 and changed['base64'] in first.extra_user_content_parts[-1].image_url.url
+    assert snapshot_for(hub.peer(b),[],light=True)['body_reference']['sha256']==blue['sha256']
+    store.revoke(a.device_id)
+    assert hub.peer(a) is None and hub.peer(b) is not None
+    await left.close();await right.close()

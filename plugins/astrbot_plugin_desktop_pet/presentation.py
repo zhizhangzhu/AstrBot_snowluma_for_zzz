@@ -1,4 +1,6 @@
 """Bounded desktop context; appearance does not create another character."""
+from .self_portrait import portrait_summary
+
 EMBODIMENT = (
     "The desktop figure is YOUR OWN embodied form, an additional body of the same persona speaking on QQ. "
     "Its skin changes your appearance, never your identity. A poke or pat touches YOU through this body; "
@@ -22,7 +24,7 @@ def prepare_speech(owner, binding, world, tool, arguments):
 
 
 def snapshot_for(peer, observations, *, light=False):
-    return {"state": peer.state, "recent_observations": observations[-(3 if light else 8):],
+    return {"body_reference": portrait_summary(peer), "state": peer.state, "recent_observations": observations[-(3 if light else 8):],
             "worlds": [{"id": w["id"], "supported": w.get("supported"),
                         "environment": str(w.get("environment", ""))[:4000] if w["id"] == "desktop-pet" and not light else "",
                         "appearance": str(w.get("appearance", ""))[:1600] if w["id"] == "desktop-pet" else "",

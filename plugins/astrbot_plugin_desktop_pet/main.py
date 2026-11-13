@@ -27,9 +27,10 @@ from .media import unpack
 from .presentation import EMBODIMENT, snapshot_for, prepare_speech
 from .interactions import InteractionBuffer
 from .avatar import AvatarCache
+from .self_portrait import attach_self_portrait
 
 
-@register("astrbot_plugin_desktop_pet", "zhizhangzhu", "Coopanion 桌宠终端：共用人格、记忆和主动决策", "0.2.5")
+@register("astrbot_plugin_desktop_pet", "zhizhangzhu", "Coopanion 桌宠终端：共用人格、记忆和主动决策", "0.2.6")
 class DesktopPetPlugin(RemoteMixin, ScheduleMixin, Star):
     def __init__(self, context: Context, config: dict):
         super().__init__(context)
@@ -282,6 +283,7 @@ class DesktopPetPlugin(RemoteMixin, ScheduleMixin, Star):
             if binding:
                 req.system_prompt += "\nYour paired Windows desktop terminal is currently offline. Its tools and live observations are unavailable; do not describe its current screen or claim to act through it.\n"
             return
+        attach_self_portrait(req, peer)
         snapshot = snapshot_for(peer, self.store.observations(peer.binding),
                                 light=bool(source and source.get("type") == "desktop-pet.touch"))
         req.system_prompt += (
@@ -336,6 +338,7 @@ class DesktopPetPlugin(RemoteMixin, ScheduleMixin, Star):
         offset = max(0, offset)
         if world:
             entry = next((w for w in peer.catalog["worlds"] if w["id"] == world), None)
+            entry = {key: value for key, value in (entry or {}).items() if key != "portrait"}
             tools = (entry or {}).get("tools", [])
             more = offset + 12 < len(tools)
             return json.dumps({**(entry or {}), "connected": True, "state": peer.state,

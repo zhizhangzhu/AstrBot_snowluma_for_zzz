@@ -67,6 +67,11 @@ def catalog(value: dict) -> dict:
         if world["id"] in seen:
             raise ProtocolError("duplicate_world")
         seen.add(world["id"])
+        if 'portrait' in world:
+            from .self_portrait import validate_portrait
+            if world['id'] != 'desktop-pet':
+                raise ProtocolError('portrait_world')
+            world['portrait'] = validate_portrait(world['portrait'])
         tools = world.get("tools", [])
         if not isinstance(tools, list):
             raise ProtocolError("invalid_tools")
