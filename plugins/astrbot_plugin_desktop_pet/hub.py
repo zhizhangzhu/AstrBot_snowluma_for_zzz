@@ -130,6 +130,14 @@ class Hub:
         elif kind == "catalog":
             peer.catalog = catalog(payload)
             peer.revision = mid
+            for world in peer.catalog["worlds"]:
+                picture = world.get("portrait") if world.get("supported") is True else None
+                if picture:
+                    logging.getLogger("astrbot").info(
+                        "Desktop body reference accepted: figure=%s version=%s scheme=%s sha256=%s size=%sx%s",
+                        picture["figure_id"], picture["figure_version"], picture["scheme"],
+                        picture["sha256"], picture["width"], picture["height"],
+                    )
             await self.notify(peer.binding)
         elif kind in {"query", "cognition"}:
             if self.remote is None:raise ProtocolError("remote_requests_unavailable")
