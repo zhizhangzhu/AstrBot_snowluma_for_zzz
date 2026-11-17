@@ -1,6 +1,7 @@
 # 小小情 QQ 机器人部署项目
 
 - 本项目在同一个 AstrBot 面板（6185）管理小小情与初小晴。小小情 Bot QQ 为 2893214983，主要用户 1005145948；初小晴 Bot QQ 为 2510093206，主要用户 1207862759。
+- 2026-11-17 起，用户暂时停用初小晴，仅运行小小情。初小晴 QQ/SnowLuma 已停止且 restart=no，统一面板的 chuxiaoqing 适配器、陪伴人格调度和 auto_bind 均停用；配置、设备数据与记忆保留。`.runtime/chuxiaoqing.paused` 让根 start.sh 跳过初小晴；未经用户要求恢复，不重新启动或启用这些入口。
 - 两个 QQ/SnowLuma 实例和设备目录独立；AstrBot 配置路由、陪伴人格数据和表情收集库分别隔离。不要把不同人格的主要用户或空间凭据混用。
 - bots/chuxiaoqing 的旧独立 AstrBot 已停止，restart=no，standalone-legacy profile 不随日常启动启用。模型 OAuth 由统一面板中的一个插件独占刷新。
 - 服务通过 compose.yaml 和 start.sh / stop.sh 管理。

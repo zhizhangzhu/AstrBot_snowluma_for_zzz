@@ -18,7 +18,11 @@ if [[ -f .runtime/evolution.enabled ]]; then
 fi
 compose up -d
 python3 scripts/ensure_oauth.py
-"$PROJECT_DIR/bots/chuxiaoqing/start.sh" --qq-only
+if [[ -f .runtime/chuxiaoqing.paused ]]; then
+    printf '初小晴已暂停，本次不启动其 QQ/SnowLuma 实例。\n'
+else
+    "$PROJECT_DIR/bots/chuxiaoqing/start.sh" --qq-only
+fi
 printf '\n小小情 QQ（2893214983）服务已启动。\n'
 python3 scripts/urls.py
 printf '查看状态：%s/status.sh\n查看管理密码：%s/credentials.sh\n' "$PROJECT_DIR" "$PROJECT_DIR"

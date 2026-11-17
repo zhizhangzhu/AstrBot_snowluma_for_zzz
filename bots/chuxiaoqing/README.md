@@ -1,5 +1,7 @@
 # 初小晴
 
+当前暂时停用，仅运行小小情。QQ/SnowLuma 容器、统一面板中的 `chuxiaoqing` 适配器、陪伴人格调度和自动绑定均已暂停，配置、设备和记忆保留。根目录 `start.sh` 遇到 `.runtime/chuxiaoqing.paused` 会跳过本实例。恢复时需重新启用对应适配器和陪伴人格、恢复 `bot_accounts.json` 中本人格原有的 `auto_bind`、移除暂停标记，再启动本实例；不要启用旧独立 AstrBot。此次原值保存在私有 `.runtime/chuxiaoqing-paused-20261117/restore-state.json`，不能用完整旧配置覆盖之后的改动。
+
 与小小情在同一 AstrBot 面板管理，主要用户和本 Bot QQ 指令管理员均为 **1207862759**。
 
 - 统一面板：http://10.74.4.16:6185（使用小小情面板已有登录信息）
