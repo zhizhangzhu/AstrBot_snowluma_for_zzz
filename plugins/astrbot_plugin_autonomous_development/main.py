@@ -27,6 +27,7 @@ from .usage import UsageLedger
 from .worker import WorkerClient
 
 NAME = 'astrbot_plugin_autonomous_development'
+OWNER_DISCUSSION_NOTICE_REVISION = 2
 
 
 @register(NAME, 'zhizhangzhu', '小小情自主成长：自主配置、隔离开发、人工Wiki和全局费用', '0.2.3')
@@ -221,9 +222,10 @@ class AutonomousDevelopment(Star, Schedule):
                     continue
                 checker = getattr(cp, '_owner_internal_discussion_allowed', None)
                 transparent = bool(callable(checker) and checker(user))
-                retry_internal = bool(transparent and not last.get('owner_transparency') and last['offered']
-                    and any(c.get('source') == 'development' and c.get('origin_event_id') == approval['id']
-                            and c.get('status') == 'blocked' and '内部机制' in str(c.get('note', ''))
+                retry_internal = bool(transparent and last.get('owner_transparency_revision', 0) < OWNER_DISCUSSION_NOTICE_REVISION and last['offered']
+                    and any(c.get('source') == 'development' and str(c.get('origin_event_id', '')).split(':', 1)[0] == approval['id']
+                            and c.get('status') == 'blocked' and any(marker in str(c.get('note', ''))
+                                for marker in ('内部机制', '主动正文是模型/工具调用失败信息'))
                             for c in cp.data.get('proactive_candidate_pool', [])))
                 if not retry_internal and (last['offered'] or time.time() - last['at'] < 3600):
                     continue
@@ -231,7 +233,7 @@ class AutonomousDevelopment(Star, Schedule):
                 candidate = {'source': 'development', 'reason': 'development_approval', 'action': 'message',
                     'scheduled_ts': now + 60, 'window_start_at': now, 'preferred_ts': now + 60,
                     'best_until_at': approval['expires'], 'expire_at': approval['expires'],
-                    'origin_event_id': approval['id'] + (':owner-discussion' if retry_internal else ''), 'topic': '有一项自主开发方案需要主要用户审核：' + approval['goal'],
+                    'origin_event_id': approval['id'] + (':owner-discussion-v' + str(OWNER_DISCUSSION_NOTICE_REVISION) if retry_internal else ''), 'topic': '有一项自主开发方案需要主要用户审核：' + approval['goal'],
                     'motive': '按你的人格自然说明为什么想做、方案范围及待批准的阶段。仅说明真实待审方案，不声称已修改；不替用户批准，不催促。'
                         '告诉用户可在自主成长页查看，或发送 /开发批准 ' + approval['id'],
                     'score': 78, 'context_key': 'planned_development_context', 'context': approval}
@@ -239,7 +241,8 @@ class AutonomousDevelopment(Star, Schedule):
                     offered = bool(cp._offer_proactive_candidate(USER, user, candidate))
                 if offered:
                     cp._schedule_data_save(sections={'users', 'proactive_candidate_pool'}, delay=.5)
-            self.store.set_setting(key, {'offered': offered, 'at': time.time(), 'owner_transparency': transparent}, revision)
+            self.store.set_setting(key, {'offered': offered, 'at': time.time(), 'owner_transparency': transparent,
+                'owner_transparency_revision': OWNER_DISCUSSION_NOTICE_REVISION if transparent else 0}, revision)
 
     @filter.on_llm_request(priority=-310090)
     async def on_llm_request(self, event: AstrMessageEvent, req: ProviderRequest):

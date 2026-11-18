@@ -96,12 +96,19 @@ async def test_approval_notice_uses_persona_candidate_once_and_cancels_stale_app
     assert len(offers)==1  # No retry under the old policy.
     cp._owner_internal_discussion_allowed=lambda user:True
     await owner.offer_approval_notices();await owner.offer_approval_notices()
-    assert len(offers)==2 and offers[1]['origin_event_id']==approval['id']+':owner-discussion'
+    assert len(offers)==2 and offers[1]['origin_event_id']==approval['id']+':owner-discussion-v2'
     assert offers[0]['status']=='blocked' and offers[1]['status']=='pending'
+    # An older deployment lost the recipient in the real local review call.
+    offers[1].update(status='blocked',note='主动正文是模型/工具调用失败信息')
+    key='approval_notice:'+approval['id'];last,rev=owner.store.setting(key,{})
+    owner.store.set_setting(key,{**last,'owner_transparency_revision':1},rev)
+    await owner.offer_approval_notices();await owner.offer_approval_notices()
+    assert len(offers)==3 and offers[2]['status']=='pending'
+    assert offers[1]['status']=='blocked'  # Keep the failed delivery audit.
     owner.tasks.decide(owner_identity(),approval['id'],'denied')
     await owner.offer_approval_notices()
-    assert offers[1]['status']=='cancelled' and owner.pending_development_approvals()==[]
-    assert len(offers)==2
+    assert offers[2]['status']=='cancelled' and owner.pending_development_approvals()==[]
+    assert len(offers)==3
     owner.store.close()
 
 @pytest.mark.asyncio

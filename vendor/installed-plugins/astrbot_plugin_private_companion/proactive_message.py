@@ -5816,6 +5816,7 @@ class ProactiveMessageMixin(FinalResponsePersistenceMixin):
             }
         outbound_guard = self._validate_proactive_outbound_candidate(
             cleaned,
+            umo=str(user.get("umo") or ""),
             reason=reason,
             action=action,
             source="review",

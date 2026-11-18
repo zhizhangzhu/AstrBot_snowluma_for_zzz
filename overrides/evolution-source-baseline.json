@@ -439,7 +439,7 @@
         "proactive.py": "69f2bdcaaecc069c5298d3d4dcc9f27ddffc916887300ca194c1345564cb0243",
         "proactive_chat_runtime_bridge.py": "2ff4aa59ad7c7c3acea95565fb0152f667b152871028e617eab0c2cf442a4889",
         "proactive_engine.py": "704eef56f8f76ec32819d3c064ded3e8615046b21e709ac8c1578be72e02e0f7",
-        "proactive_message.py": "a13ca637617cad99d54367bcfb9d935c774fbdb90530b782faef10b2f9debeae",
+        "proactive_message.py": "381011b0686bab3c21ae6a6488ae9c6e36380c3e1c9fe01bad9cf9014a43e95e",
         "proactive_routes.py": "49286fc599710a3437e0b2ced47255caab4cc947e3b4ef68e5449e63bfc73872",
         "prompt_surface.py": "592745fa104fc49aaf6092540e74c865fa2b1493c168caf305eb728de36ce4e3",
         "qq_history_bridge.py": "56d86dedda0044b60e87f3b1927a7bb693a862918291b16ee13298adeecfd614",

@@ -102,3 +102,18 @@ def test_schema_default_and_scope_materialize_per_persona():
     entry=load_scope_manifest()['allow_owner_internal_discussion']
     assert entry['scope']=='persona' and entry['new_key_default'] is False
     assert 'allow_owner_internal_discussion' in PERSONA_SETTINGS_NEW_KEYS_BY_VERSION[18]
+
+
+def test_actual_local_review_passes_recipient_to_final_gate():
+    class Reviewer(Host,ProactiveMessageMixin):
+        def _proactive_review_strength(self):return 'normal'
+        def _proactive_link_platform_mismatch_reason(self,*a):return ''
+        def _wrong_proactive_recipient_address(self,*a):return ''
+        def _unverified_proactive_fact_decision(self,*a,**kw):return {'decision':'send','reason':'post_guard'}
+    h=Reviewer()
+    text='猪猪，我想把自主开发工具调用失败后的说明改好，现在只是待你审核的方案'
+    assert h._local_proactive_send_decision(h.user,text,reason='development_approval',action='message')['decision']=='drop'
+    h.allow_owner_internal_discussion=True
+    assert h._local_proactive_send_decision(h.user,text,reason='development_approval',action='message')['reason']=='post_guard'
+    other={**h.user,'user_id':'another','umo':'xiaoxiaoqing:FriendMessage:another'}
+    assert h._local_proactive_send_decision(other,text,reason='development_approval',action='message')['decision']=='drop'
