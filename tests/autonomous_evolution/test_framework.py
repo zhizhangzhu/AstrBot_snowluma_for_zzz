@@ -44,6 +44,60 @@ async def test_real_function_executor_proposes_goal_and_uses_real_identity_valid
     owner.store.close()
 
 @pytest.mark.asyncio
+async def test_real_executor_omitted_arguments_and_invalid_mutation_still_authenticate(tmp_path):
+    owner=AutonomousDevelopment.__new__(AutonomousDevelopment)
+    owner.store=Store(tmp_path/'state.sqlite3');owner.tasks=Tasks(owner.store)
+    companion=S(_primary_persona_id=lambda:'小小情');memory=S(service=object())
+    owner.context=S(get_all_stars=lambda:[S(name='astrbot_plugin_private_companion',activated=True,star_cls=companion),S(name='astrbot_plugin_memory_companion',activated=True,star_cls=memory)],
+        get_config=lambda **kw:{'provider_settings':{}},
+        conversation_manager=S(get_curr_conversation_id=AsyncMock(return_value=None)),
+        persona_manager=S(resolve_selected_persona=AsyncMock(return_value=('小小情',object(),None))))
+    owner.configuration=S(enabled=lambda:{'enabled':True})
+    owner.knowledge=S(status=AsyncMock(return_value={'kind':'wiki'}))
+    tool=FunctionTool(name='autonomous_growth',description='test',parameters={},handler=owner.growth_tool)
+    ctx=S(context=S(event=Event()),tool_call_timeout=30)
+    async def execute(operation,**kwargs):
+        results=[r async for r in FunctionToolExecutor.execute(tool=tool,run_context=ctx,operation=operation,**kwargs)]
+        return json.loads(results[0].content[0].text)
+    for operation in ('status','tasks'):
+        assert (await execute(operation))['ok']
+        assert (await execute(operation,arguments={}))['ok']
+    assert not (await execute('propose'))['ok']
+    assert not (await execute('propose',arguments=[]))['ok']
+    ctx.context.event=Event('chuxiaoqing','2510093206','1207862759')
+    assert not (await execute('status'))['ok']
+    assert owner.tasks.list(__import__('astrbot_plugin_autonomous_development.integrations',fromlist=['owner_identity']).owner_identity())==[]
+    owner.store.close()
+
+@pytest.mark.asyncio
+async def test_approval_notice_uses_persona_candidate_once_and_cancels_stale_approval(tmp_path,monkeypatch):
+    from contextlib import contextmanager
+    import asyncio
+    from astrbot_plugin_autonomous_development.integrations import owner_identity
+    owner=AutonomousDevelopment.__new__(AutonomousDevelopment)
+    owner.store=Store(tmp_path/'state.sqlite3');owner.tasks=Tasks(owner.store);owner.context=object()
+    task=owner.tasks.create(owner_identity(),'修复表情包认知的纠正召回')
+    owner.tasks.plan(owner_identity(),task['id'],{'paths':['plugins/example/recall.py'],'summary':'先验证纠正信息的读取路径'})
+    approval=owner.tasks.request_approval(owner_identity(),task['id'],'modify')
+    offers=[];saves=[]
+    cp=S(data={'users':{'1005145948':{'umo':'xiaoxiaoqing:FriendMessage:1005145948'}},'proactive_candidate_pool':[]},_data_lock=asyncio.Lock())
+    def offer(uid,user,candidate):
+        candidate={**candidate,'status':'pending'};offers.append(candidate);cp.data['proactive_candidate_pool'].append(candidate);return True
+    cp._offer_proactive_candidate=offer;cp._schedule_data_save=lambda **kw:saves.append(kw)
+    @contextmanager
+    def context(_):yield cp
+    monkeypatch.setattr('astrbot_plugin_autonomous_development.main.companion_context',context)
+    await owner.offer_approval_notices();await owner.offer_approval_notices()
+    assert len(offers)==1 and offers[0]['context']['id']==approval['id']
+    assert '人格' in offers[0]['motive'] and '/开发批准 '+approval['id'] in offers[0]['motive']
+    assert owner.tasks.get(owner_identity(),task['id'])['state']=='awaiting_approval'
+    owner.tasks.decide(owner_identity(),approval['id'],'denied')
+    await owner.offer_approval_notices()
+    assert offers[0]['status']=='cancelled' and owner.pending_development_approvals()==[]
+    assert len(offers)==1
+    owner.store.close()
+
+@pytest.mark.asyncio
 async def test_real_astrbot_knowledge_create_index_and_retrieve_are_confirmed(tmp_path,monkeypatch):
     """Real DB/vector pipeline; deterministic fixture vectors are not a production model."""
     import numpy as np

@@ -40,6 +40,9 @@ class Administration:
         settings = {k: {'value': p.store.setting(k, v)[0], 'revision': p.store.setting(k, v)[1]} for k, v in self.defaults().items()}
         return {'owner': {'bot': BOT, 'persona': PERSONA, 'user': USER, 'immutable': True},
                 'dependencies': p.store.setting('dependencies', {'available': False})[0],
+                'development_review': p.store.setting('development_review', {})[0],
+                'development_queue_health': p.store.setting('development_queue_health', {})[0],
+                'development_context_health': p.store.setting('development_context_health', {})[0],
                 'worker_connected': __import__('pathlib').Path(p.worker.path).is_socket(),
                 'settings': settings, 'tasks': p.tasks.list(self.identity),
                 'approvals': p.store.rows('SELECT * FROM approvals ORDER BY created DESC LIMIT 100'),

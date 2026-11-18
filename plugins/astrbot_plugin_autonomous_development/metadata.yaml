@@ -1,6 +1,6 @@
 name: astrbot_plugin_autonomous_development
 display_name: 自主开发
 author: zhizhangzhu
-version: 0.2.1
+version: 0.2.2
 description: 小小情专属自主开发、统一配置、人工资料 Wiki 和全局费用治理。
 repo: https://github.com/zhizhangzhu/AstrBot_snowluma_for_zzz
