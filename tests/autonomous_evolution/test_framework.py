@@ -90,6 +90,7 @@ async def test_approval_notice_uses_persona_candidate_once_and_cancels_stale_app
     await owner.offer_approval_notices();await owner.offer_approval_notices()
     assert len(offers)==1 and offers[0]['context']['id']==approval['id']
     assert '人格' in offers[0]['motive'] and '/开发批准 '+approval['id'] in offers[0]['motive']
+    assert len(offers[0]['motive']) <= 120  # Companion's durable motive field must retain the whole approval command.
     assert owner.tasks.get(owner_identity(),task['id'])['state']=='awaiting_approval'
     offers[0].update(status='blocked', note='候选语义不够自然: 内部机制泄露')
     await owner.offer_approval_notices()

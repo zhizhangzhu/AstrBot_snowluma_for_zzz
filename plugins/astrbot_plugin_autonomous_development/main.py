@@ -234,8 +234,7 @@ class AutonomousDevelopment(Star, Schedule):
                     'scheduled_ts': now + 60, 'window_start_at': now, 'preferred_ts': now + 60,
                     'best_until_at': approval['expires'], 'expire_at': approval['expires'],
                     'origin_event_id': approval['id'] + (':owner-discussion-v' + str(OWNER_DISCUSSION_NOTICE_REVISION) if retry_internal else ''), 'topic': '有一项自主开发方案需要主要用户审核：' + approval['goal'],
-                    'motive': '按你的人格自然说明为什么想做、方案范围及待批准的阶段。仅说明真实待审方案，不声称已修改；不替用户批准，不催促。'
-                        '告诉用户可在自主成长页查看，或发送 /开发批准 ' + approval['id'],
+                    'motive': '按人格说明想改什么、原因和待审状态，不声称已获准或完成。可到自主成长页审批，或发送 /开发批准 ' + approval['id'],
                     'score': 78, 'context_key': 'planned_development_context', 'context': approval}
                 async with cp._data_lock:
                     offered = bool(cp._offer_proactive_candidate(USER, user, candidate))
