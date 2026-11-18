@@ -1,0 +1,28 @@
+{
+  "format": 1,
+  "date": "2026-11-11",
+  "source_only": true,
+  "plugin": "astrbot_plugin_private_companion",
+  "files": {
+    "qzone_comments.py": {
+      "before": "26d2b93de331f9c81021c97440e58882368b47c6ead3e5d9d936527c9c80eb65",
+      "after": "29539cd48ab747f14f7e0942636b75b63ff82baf7b259550ce38b38ce9fe3ecc"
+    },
+    "qzone_native_actions.py": {
+      "before": "7e6d423f956a2507ff0754f6584e4030244054249b915faa3dcc8a8258916a58",
+      "after": "004ab2bc096d5c360381332513860ba61a49d103282548c4d396705c661034e7"
+    },
+    "qzone_interactions.py": {
+      "before": null,
+      "after": "0b6cfb433f010ee57792604e6e5b6924151c930087684a79b582dbe0428b9cb1"
+    },
+    "qzone_runtime.py": {
+      "before": "b62ef66f8358db7eac306eb5da4113e642e0e3c1a389d75d88d4015106bcff5f",
+      "after": "e265262b66d41d76aa89d29445ce3f4d71e5b50851f3ff8a723f009b19a8e551"
+    }
+  },
+  "snowluma": {
+    "before": "28a2970ac5d393cb70201d08c5afe196f13121e2a5361f30ef04818d2fe39883",
+    "after": "9d9e4e9629fcc95ee8d7b8f947541b5d8f160358ecbb24d1d4686d3079a48be2"
+  }
+}

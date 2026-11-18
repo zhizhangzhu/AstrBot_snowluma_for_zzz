@@ -1,6 +1,7 @@
 # 小小情 QQ 机器人部署项目
 
 - 本项目在同一个 AstrBot 面板（6185）管理小小情与初小晴。小小情 Bot QQ 为 2893214983，主要用户 1005145948；初小晴 Bot QQ 为 2510093206，主要用户 1207862759。
+- 2026-11-17 起，用户暂时停用初小晴，仅运行小小情。初小晴 QQ/SnowLuma 已停止且 restart=no，统一面板的 chuxiaoqing 适配器、陪伴人格调度和 auto_bind 均停用；配置、设备数据与记忆保留。`.runtime/chuxiaoqing.paused` 让根 start.sh 跳过初小晴；未经用户要求恢复，不重新启动或启用这些入口。
 - 两个 QQ/SnowLuma 实例和设备目录独立；AstrBot 配置路由、陪伴人格数据和表情收集库分别隔离。不要把不同人格的主要用户或空间凭据混用。
 - bots/chuxiaoqing 的旧独立 AstrBot 已停止，restart=no，standalone-legacy profile 不随日常启动启用。模型 OAuth 由统一面板中的一个插件独占刷新。
 - 服务通过 compose.yaml 和 start.sh / stop.sh 管理。
@@ -24,6 +25,13 @@
 - 父仓库 origin 为 https://github.com/zhizhangzhu/AstrBot_snowluma_for_zzz.git，默认分支 main；Coopanion/ 是独立客户端子模块，父仓库固定其提交号。
 - 跟踪范围与源码迁移约定见 VERSIONING.md；data/ 与 runtime/ 继续排除，不能把当前运行目录误认为已由 Git 完整备份。
 - 按明确路径暂存并检查，不使用 git add -A、git add . 或 git commit -a；不强制加入凭据、用户记录、数据库或私有媒体。
-- 本地提交与远程发布分开；只有用户明确要求时才推送。桌宠目前只准备源码与版本管理，功能开发须等待用户明确开始。
+- 本地提交与远程发布分开；只有用户明确要求时才推送。用户已授权按桌宠计划书开发；生产切换、推送和 Releases 按计划书另行安排。
 
-- 桌宠接入的已确认需求、默认行为、阶段和验收清单见 docs/desktop-pet-integration-plan.md；该计划书不代表用户已授权开始功能开发。
+- 桌宠接入的需求与验收清单见 docs/desktop-pet-integration-plan.md，实现状态、限制及部署步骤见 docs/desktop-pet-implementation.md。
+- QQ 与桌宠共享会话和记忆身份，实际来源与回复目标分别保留。修改追加消息、主动路由或共同身份时，覆盖跨端同时输入、生成中切端、设备撤销及两个人格隔离；不得将桌宠事件伪装成 QQ 戳一戳。
+- 桌宠工具参数不得与实际框架调度参数（如 tool）冲突；须通过真实 FunctionToolExecutor 回归。人格解析兼容实际返回项数，普通输入和查询共用鉴权，不能只用简化替身证明入口可用。
+- 表情等回复媒体须沿当前事件发送；共享 QQ 会话编号不代表本次回复目标是 QQ。桌宠发送失败不得降级为 QQ。换装只更新身体观察，不逐次触发模型；桌宠形象是同一人格的自身化身。故障与验收证据见 docs/desktop-pet-acceptance.md。
+
+- 自主配置、自主开发、知识库成长与全局费用治理的需求基线见 docs/autonomous-evolution-design.md，开发阶段及验收见 docs/autonomous-evolution-development-plan.md。自主开发主 Bot 仅为小小情，配置自调与代码开发权限独立；文档完成不代表功能实现或权限已经开启。
+
+- Windows NSIS 验收即使使用临时 /D 目录，同 AppID 的安装器仍会访问现有卸载记录，可能卸载用户正式程序。已有正式安装的用户电脑上，界面与窗口回归使用 win-unpacked 和独立数据；完整安装器回归使用无既有安装的独立环境。对用户正式升级须先备份配对与终端配置，并验证 tsx、koffi、桌宠 World、实际 WSS 连接和源码摘要；仅看到版本号或安装器进程结束不能判定成功。参见 docs/desktop-installation-20261105.md。

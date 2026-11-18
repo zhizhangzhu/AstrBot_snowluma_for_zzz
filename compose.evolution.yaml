@@ -1,0 +1,9 @@
+# Loaded only after version-checked preparation, through scripts/common.sh.
+services:
+  astrbot:
+    volumes:
+      - ./plugins/astrbot_plugin_autonomous_development:/AstrBot/data/plugins/astrbot_plugin_autonomous_development:ro
+      - ./.runtime/evolution-transport:/AstrBot/evolution-transport:ro
+      - ./.runtime/evolution-deployment/index.html:/AstrBot/astrbot/dashboard/dist/index.html:ro
+      - ./plugins/astrbot_plugin_autonomous_development/dashboard.js:/AstrBot/astrbot/dashboard/dist/evolution-dashboard.js:ro
+      - ./plugins/astrbot_plugin_autonomous_development/pages/自主成长/app.js:/AstrBot/astrbot/dashboard/dist/evolution-ui.js:ro

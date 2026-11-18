@@ -1,0 +1,73 @@
+--- a/backend/media_receipts.py
++++ b/backend/media_receipts.py
+@@ -5,6 +5,7 @@
+ from ..config import PLUGIN_DATA_DIR
+ from .packs.resolver import get_pack_paths, resolve_pack_ids
+ from .semantic.metadata_search import character_reference_images
++from .image_cognition import describe
+ 
+ MAX_AGE=86400*7
+ FOLLOWUP_AGE=1800
+@@ -130,7 +131,7 @@
+         return {**result,'scope':'current_persona_usable_library','query':str(query)[:300],
+                 'matches':[{'image_id':item['id'],'pack_id':item['_source_pack_id'],
+                             'status':'owned','saved':True,'caption':item['caption'],
+-                            'tags':item.get('tags',[]),'visible_text':item.get('visible_text','')}
++                            'tags':item.get('tags',[]),'visible_text':item.get('visible_text',''),'cognition':describe(self.plugin,event,digest=item.get('content_sha256',''))}
+                            for item in candidates]}
+ 
+     def status(self,event,row):
+@@ -179,9 +180,14 @@
+         rows=await self.candidates(event)
+         recent=self.load(event)[-5:]
+         result={'ok':True,'scope':'current_conversation_recent_images',
+-                'recent_images':[{'image_id':r['id'],'received_or_sent_at':r['at'],'sender':r['role'],**self.media_info(event,r),**self.status(event,r)} for r in recent],
+-                'images':[{'image_id':r['id'],'sender':r['role'],**self.media_info(event,r),**self.status(event,r)} for r in rows],
++                'recent_images':[{'image_id':r['id'],'received_or_sent_at':r['at'],'sender':r['role'],**self.media_info(event,r),**self.status(event,r),'cognition':describe(self.plugin,event,digest=r['digest'],pack_ids=self.packs(event))} for r in recent],
++                'images':[{'image_id':r['id'],'sender':r['role'],**self.media_info(event,r),**self.status(event,r),'cognition':describe(self.plugin,event,digest=r['digest'],pack_ids=self.packs(event))} for r in rows],
+                 'instruction':'只有 status=owned 且 saved=true 表示已拥有可用原图。queued/awaiting_identity/awaiting_review 不是已入库；不要用记忆工具代替保存图片。重复图片不重复入库。recent_images 仅列近期图片，不是完整图库；旧图不在近期列表不能推断未收藏，使用 meme_collection_status(query=具体文字或动作关键词) 查询当前人格的实际图库。GIF 的多帧只属于一张动图。'}
++        match=re.fullmatch(r'(?:image:)?([a-f0-9]{16,64})',str(query or '').strip())
++        if match:
++            result['cognition']=describe(self.plugin,event,digest=match.group(1),pack_ids=self.packs(event))
++            result['scope']='current_persona_image_cognition'
++            return result
+         if str(query or '').strip():
+             result['library_search']=await asyncio.to_thread(self.owned_search,event,str(query).strip())
+         return result
+--- a/mixins/event_handlers.py
++++ b/mixins/event_handlers.py
+@@ -1830,6 +1830,11 @@
+     async def _send_meme_image(self, event: AstrMessageEvent, image: Image) -> None:
+         original_image = image
+         image = await self._ensure_image_send_format(image)
++        try:
++            from ..backend.image_cognition import describe, attach
++            image = attach(image, describe(self,event,image=original_image))
++        except Exception:
++            logger.debug("图片认知读取未完成，不补造人物或含义",exc_info=True)
+         platform_name = event.get_platform_name()
+         # Preserve the originating OneBot event so companion send tracking can
+         # retain successfully delivered images for quoted/follow-up vision.
+--- a/main.py
++++ b/main.py
+@@ -392,7 +392,8 @@
+         """Check actual image ownership and collection status; search older owned memes by keywords.
+ 
+         Args:
+-            query(string): Optional visible text, character or action keywords for an older meme.
++            query(string): Optional image:SHA256-prefix identifier, visible text, character or action keywords.
++                Exact image IDs return current character, emotion, visible text, meaning and revision.
+                 Recent images are not the complete library. Use query to verify older saved images.
+ 
+         Returns:
+--- a/backend/semantic/metadata_search.py
++++ b/backend/semantic/metadata_search.py
+@@ -122,7 +122,7 @@
+             continue
+         seen.add(entry_id)
+         candidates.append({"id": ids[entry_id], "caption": item["caption"], "tags": item.get("tags", []),
+-                           "visible_text": item.get("visible_text", ""), "_source_pack_id": context["pack_id"]})
++                           "visible_text": item.get("visible_text", ""), "_source_pack_id": context["pack_id"], "content_sha256":item.get("content_sha256","")})
+         if len(candidates) >= max(1, min(10, int(top_k))):
+             break
+     logger.info("[meme_manager] 本地描述/标签检索完成：%s 个候选，图包：%s", len(candidates), [c["pack_id"] for c in pack_contexts])

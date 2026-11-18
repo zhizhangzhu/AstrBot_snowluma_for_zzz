@@ -1,0 +1,8 @@
+# Loaded by scripts/common.sh only after the checked integration patches are applied.
+services:
+  astrbot:
+    ports:
+      - "${WEBUI_LAN_ADDRESS:?Set WEBUI_LAN_ADDRESS in .env}:${DESKTOP_PET_PORT:-6190}:6190"
+    volumes:
+      - ./plugins/astrbot_plugin_desktop_pet:/AstrBot/data/plugins/astrbot_plugin_desktop_pet:ro
+      - ./.runtime/desktop-pet/follow_up.py:/AstrBot/astrbot/core/pipeline/process_stage/follow_up.py:ro

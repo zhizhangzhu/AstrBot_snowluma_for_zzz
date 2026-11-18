@@ -1,0 +1,40 @@
+{
+  "format": 1,
+  "groups": {
+    "companion": {
+      "root": "data/astrbot/plugins/astrbot_plugin_private_companion",
+      "patch": "companion.patch",
+      "files": {
+        "main.py": "8f8d3e9a27d6d4d9a1b9fea8a1f346e0a4c168c6551d26bdd6be2aec9ba7a1a1",
+        "proactive_message.py": "4c2c02f8c75f33718cf81ec48fdde54485a8a477f0e4082cad89509c0001c15a",
+        "real_schedule/catalog.py": "8ca586725c9e536aa23797f9507d37613b2b851491b60639d494c03c00e125f5",
+        "real_schedule/runtime.py": "c7b5b4cd3eb3bb24ec95e61cc2cf95c0b8feaa407a058cb517dd57759e19f241",
+        "real_schedule/day_plan.py": "72b2c36604b6a604d3102033a8f9f939498deec12bb5090d630a700b6d17b164",
+        "platform_compat.py": "f5c543905bb708c3af0e63b4294fb63e7b146924603ea7586551c5ff09c0a9b6",
+        "core_store.py": "5d46adc193108e750c71c05127f275f334765f187d813d842aa8ae6658cf33a2"
+      }
+    },
+    "memory": {
+      "root": "data/astrbot/plugins/astrbot_plugin_memory_companion",
+      "patch": "memory.patch",
+      "files": {
+        "core/models.py": "4d9400c93172a506c90529786786606b64d4b4cf7702dae80c42ae54d0d724a3",
+        "core/identity.py": "b8a34653abbfd10fae4fd5d4104dc078f1ee19df3341c1a00bb5c33c7ff4d9d5",
+        "core/service.py": "e476e1f97aefef28b176860164a250a4fe4b7760b586af11ae5980c1e6008afb"
+      }
+    },
+    "meme": {
+      "root": "data/astrbot/plugins/meme_manager",
+      "patch": "meme-confirmation.patch",
+      "files": {
+        "backend/character_confirmation.py": "47d5c04c7482e560753bcdff2cc66ec2c6e4f78f70b7407b2e8d1b6c3db6cc39",
+        "mixins/event_handlers.py": "42f5de09773c641cf18db3d8b9c568f11a1c6ee78ac224f91e759dd97a526bf0"
+      }
+    }
+  },
+  "astrbot": {
+    "path": "astrbot/core/pipeline/process_stage/follow_up.py",
+    "sha256": "979b4fb5fe80839e63b2f681b56fd0e7f00bf5c8099caff2c4b7cdfbec7216cc",
+    "patch": "astrbot-follow-up.patch"
+  }
+}

@@ -1,0 +1,27 @@
+[Unit]
+Description=AstrBot restricted autonomous development publisher
+Requires=docker.service
+After=docker.service
+ConditionPathExists=/home/yingjxu/workspace/astrbot-snowluma/.runtime/evolution.enabled
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/home/yingjxu/workspace/astrbot-snowluma
+Environment=PATH=/usr/bin:/bin
+Environment=HOME=/root
+Environment=LANG=C.UTF-8
+EnvironmentFile=-/home/yingjxu/workspace/astrbot-snowluma/.runtime/evolution-transport/publisher.env
+ExecStart=/usr/bin/python3 /home/yingjxu/workspace/astrbot-snowluma/scripts/evolution_worker.py
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=340
+KillMode=mixed
+NoNewPrivileges=true
+UMask=0077
+StandardOutput=journal
+StandardError=journal
+
+# Started and stopped by the project lifecycle scripts; no independent boot target.

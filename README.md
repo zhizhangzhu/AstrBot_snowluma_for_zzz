@@ -1,4 +1,8 @@
+桌宠首版源码、测试状态与部署回滚步骤见 [桌宠实现与验收](docs/desktop-pet-implementation.md)。当前未切换生产环境。
+
 桌宠接入需求与后续实施核对见 [AstrBot × Coopanion 桌宠接入计划书](docs/desktop-pet-integration-plan.md)。
+
+小小情的自主配置、自主开发、知识库成长与费用治理见[完整方案书](docs/autonomous-evolution-design.md)和[分阶段开发计划及验收清单](docs/autonomous-evolution-development-plan.md)。目前仅完成需求文档，尚未启动该轮开发或启用新权限。
 
 版本管理范围、桌宠子模块和 Windows 发布约定见 [VERSIONING.md](VERSIONING.md)。
 

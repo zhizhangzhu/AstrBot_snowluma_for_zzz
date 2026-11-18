@@ -1,0 +1,34 @@
+--- a/backend/character_confirmation.py
++++ b/backend/character_confirmation.py
+@@ -360,11 +360,18 @@
+                 current['question_state']='sending'
+                 self._save()
+             delivery_started=True
+-            sent = await self.plugin.context.send_message(owner_origin, MessageChain([Image.fromBytes(content), Plain(question)]))
++            message = MessageChain([Image.fromBytes(content), Plain(question)])
++            terminal_star = self.plugin.context.get_registered_star('astrbot_plugin_desktop_pet')
++            terminal = getattr(terminal_star, 'star_cls', None) if terminal_star and getattr(terminal_star, 'activated', False) else None
++            route = getattr(terminal, 'route_proactive_message', None)
++            terminal_result = await route(owner_origin, message) if callable(route) else None
++            sent = terminal_result if terminal_result is not None else await self.plugin.context.send_message(owner_origin, message)
++            if terminal_result is False:
++                delivery_started = False
+             if not sent:
+                 raise RuntimeError("The administrator platform is unavailable")
+             getter=getattr(companion,'last_qq_context_delivery',None)
+-            delivery=getter(owner_origin) if callable(getter) else {}
++            delivery=getter(owner_origin) if callable(getter) and terminal_result is None else {}
+             async with self._lock:
+                 current = self._state["requests"][snapshot["id"]]
+                 if current.get("question_state") == "sending":
+--- a/mixins/event_handlers.py
++++ b/mixins/event_handlers.py
+@@ -1833,7 +1833,7 @@
+         platform_name = event.get_platform_name()
+         # Preserve the originating OneBot event so companion send tracking can
+         # retain successfully delivered images for quoted/follow-up vision.
+-        if platform_name in {"gewechat", "webchat", "aiocqhttp"}:
++        if platform_name in {"gewechat", "webchat", "aiocqhttp", "desktop_pet"}:
+             result = await event.send(MessageChain([image]))
+             if result is not False and platform_name == "aiocqhttp":
+                 try:
