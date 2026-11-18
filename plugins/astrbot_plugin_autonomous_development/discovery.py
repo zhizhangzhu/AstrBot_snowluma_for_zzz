@@ -129,6 +129,8 @@ class DevelopmentDiscovery:
             scope, day = runtime.scope(), runtime.day()
             rows = runtime.ledger.list(scope, day=day, limit=500)
             pending = {'planned', 'deferred', 'paused', 'running'}
+            wake = any(r['capability'] in {CAPABILITY + 'propose', CAPABILITY + 'develop'}
+                       and r['capability'] in grants and r['state'] in pending - {'running'} and r['earliest'] <= now for r in rows)
             status = self.proposal_status()
             local = cp._environment_fromtimestamp(now)
             if CAPABILITY + 'propose' in grants and status['due'] and (status['new_input'] or (local.hour, local.minute) >= (16, 30)):
@@ -137,10 +139,12 @@ class DevelopmentDiscovery:
                     runtime.ledger.enqueue(scope, day, CAPABILITY + 'propose', '结合近期反馈评估开发需求',
                         f'development-review:{day}:{status["input_serial"]}:{status["attempts"]}', earliest=now, deadline=runtime.end_of_day(),
                         priority=65, effect='local_write', payload={'source': 'development_review', 'reason': '评估真实反馈；不自动批准修改'})
+                    wake = True
                 elif status['new_input']:
                     for row in matches:
                         if row['state'] != 'running' and row['earliest'] > now:
                             runtime.ledger.reschedule(scope, row['id'], earliest=now, note='收到新的开发反馈，空闲时评估')
+                            wake = True
             if CAPABILITY + 'develop' in grants:
                 tasks = self.ready_development_tasks()
                 if tasks and not any(r['capability'] == CAPABILITY + 'develop' and r['state'] in pending for r in rows):
@@ -148,3 +152,9 @@ class DevelopmentDiscovery:
                     runtime.ledger.enqueue(scope, day, CAPABILITY + 'develop', '推进待处理的自主开发阶段',
                         f'development-step:{day}:{task["id"]}:{task["revision"]}', earliest=now, deadline=runtime.end_of_day(),
                         priority=60, effect='local_write', payload={'source': 'development_queue', 'task_id': task['id']})
+                    wake = True
+            if wake:
+                # Admission must also wake the existing coordinator: its native
+                # proactive timer may currently be asleep. tick owns all locks,
+                # idle/native-busy checks and execution, including after reload.
+                await runtime.tick()

@@ -119,7 +119,7 @@ async def test_daily_and_feedback_admission_deduplicate_and_obey_grants(owner, m
     monkeypatch.setattr('astrbot_plugin_autonomous_development.discovery.time.time', lambda: clock)
     grants = [CAPABILITY + 'propose', CAPABILITY + 'develop']
     runtime = S(ledger=ledger, scope=lambda: 'primary-scope', day=lambda: '2026-11-18',
-        end_of_day=lambda: clock + 3600, hard_limit=lambda: False)
+        end_of_day=lambda: clock + 3600, hard_limit=lambda: False, tick=AsyncMock())
     owner.cp.persona_setting = lambda key, default: grants
     owner.cp._environment_fromtimestamp = lambda now: datetime.fromtimestamp(now, ZONE)
     @contextmanager
@@ -129,6 +129,7 @@ async def test_daily_and_feedback_admission_deduplicate_and_obey_grants(owner, m
         lambda _: S(enabled=lambda cp: True, service=lambda cp: runtime))
     await owner.maintain_development_queue(); await owner.maintain_development_queue()
     assert len(ledger.list('primary-scope')) == 1
+    assert runtime.tick.await_count == 2  # Both admission and recovery wake the SAME coordinator.
     task = owner.tasks.create(owner_identity(), '先设计可审核的改进方案')
     await owner.maintain_development_queue(); await owner.maintain_development_queue()
     assert len(ledger.list('primary-scope')) == 2
@@ -138,8 +139,10 @@ async def test_daily_and_feedback_admission_deduplicate_and_obey_grants(owner, m
     assert all(r['state'] == 'planned' for r in ledger.list('primary-scope'))
     grants.clear()
     before = len(ledger.list('primary-scope'))
+    runtime.tick.reset_mock()
     await owner.maintain_development_queue()
     assert len(ledger.list('primary-scope')) == before
+    runtime.tick.assert_not_awaited()
     owner.store.set_setting('development', {'mode': 'off'})
     owner.context = None
     await owner.maintain_development_queue()  # Does not even open another persona when disabled.
