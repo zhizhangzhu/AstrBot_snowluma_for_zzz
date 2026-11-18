@@ -129,6 +129,12 @@ class DevelopmentDiscovery:
             scope, day = runtime.scope(), runtime.day()
             rows = runtime.ledger.list(scope, day=day, limit=500)
             pending = {'planned', 'deferred', 'paused', 'running'}
+            # Other native receipts (e.g. presence ACKs) may finish an activity
+            # whose extension declined during maintenance. Only our durable
+            # review/task revision proves progress. Give that unconsumed work a
+            # new admission key instead of INSERT OR IGNORE reusing a terminal row.
+            previous = {kind: next((r['id'] for r in rows if r['capability'] == CAPABILITY + kind
+                                   and r['state'] not in pending), 'first') for kind in ('propose', 'develop')}
             wake = any(r['capability'] in {CAPABILITY + 'propose', CAPABILITY + 'develop'}
                        and r['capability'] in grants and r['state'] in pending - {'running'} and r['earliest'] <= now for r in rows)
             status = self.proposal_status()
@@ -137,7 +143,7 @@ class DevelopmentDiscovery:
                 matches = [r for r in rows if r['capability'] == CAPABILITY + 'propose' and r['state'] in pending]
                 if not matches:
                     runtime.ledger.enqueue(scope, day, CAPABILITY + 'propose', '结合近期反馈评估开发需求',
-                        f'development-review:{day}:{status["input_serial"]}:{status["attempts"]}', earliest=now, deadline=runtime.end_of_day(),
+                        f'development-review:{day}:{status["input_serial"]}:{status["attempts"]}:{previous["propose"]}', earliest=now, deadline=runtime.end_of_day(),
                         priority=65, effect='local_write', payload={'source': 'development_review', 'reason': '评估真实反馈；不自动批准修改'})
                     wake = True
                 elif status['new_input']:
@@ -150,7 +156,7 @@ class DevelopmentDiscovery:
                 if tasks and not any(r['capability'] == CAPABILITY + 'develop' and r['state'] in pending for r in rows):
                     task = tasks[0]
                     runtime.ledger.enqueue(scope, day, CAPABILITY + 'develop', '推进待处理的自主开发阶段',
-                        f'development-step:{day}:{task["id"]}:{task["revision"]}', earliest=now, deadline=runtime.end_of_day(),
+                        f'development-step:{day}:{task["id"]}:{task["revision"]}:{previous["develop"]}', earliest=now, deadline=runtime.end_of_day(),
                         priority=60, effect='local_write', payload={'source': 'development_queue', 'task_id': task['id']})
                     wake = True
             if wake:

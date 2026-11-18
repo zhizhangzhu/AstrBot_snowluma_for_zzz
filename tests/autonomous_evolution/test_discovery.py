@@ -130,13 +130,22 @@ async def test_daily_and_feedback_admission_deduplicate_and_obey_grants(owner, m
     await owner.maintain_development_queue(); await owner.maintain_development_queue()
     assert len(ledger.list('primary-scope')) == 1
     assert runtime.tick.await_count == 2  # Both admission and recovery wake the SAME coordinator.
+    old = ledger.list('primary-scope')[0]
+    with ledger.connect() as db:
+        db.execute("UPDATE activities SET state='succeeded' WHERE id=?", (old['id'],))
+    ledger.receipt('primary-scope', old['id'], 'presence-only',
+                   {'verified': True, 'evidence_kind': 'qq_action_ack', 'source': 'set_diy_online_status', 'summary': 'QQ在线状态更新成功'})
+    await owner.maintain_development_queue(); await owner.maintain_development_queue()
+    reviews = ledger.list('primary-scope')
+    assert len(reviews) == 2 and sum(r['state'] == 'planned' for r in reviews) == 1
+    assert owner.store.setting('development_review')[0] is None
     task = owner.tasks.create(owner_identity(), '先设计可审核的改进方案')
     await owner.maintain_development_queue(); await owner.maintain_development_queue()
-    assert len(ledger.list('primary-scope')) == 2
+    assert len(ledger.list('primary-scope')) == 3
     owner.tasks.plan(owner_identity(), task['id'], {'paths': ['plugins/example/format.py']})
     # Awaiting approval is not made executable by the admission watcher.
     assert owner.ready_development_tasks() == []
-    assert all(r['state'] == 'planned' for r in ledger.list('primary-scope'))
+    assert sum(r['state'] == 'planned' for r in ledger.list('primary-scope')) == 2
     grants.clear()
     before = len(ledger.list('primary-scope'))
     runtime.tick.reset_mock()
