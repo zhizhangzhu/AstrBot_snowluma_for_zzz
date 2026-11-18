@@ -15295,6 +15295,7 @@ class PrivateCompanionPageApi(
 
         features: dict[str, bool] = {
             "enable_llm_proactive_message": proactive_private,
+            "allow_owner_internal_discussion": bool_value("allow_owner_internal_discussion", False),
             "enable_llm_proactive_persona_judge": proactive_private and bool_value(
                 "enable_llm_proactive_persona_judge",
                 bool(getattr(self.plugin, "enable_llm_proactive_persona_judge", True)),
@@ -21170,6 +21171,7 @@ class PrivateCompanionPageApi(
             "enable_proactive_message_review",
             "enable_smart_silence",
             "enable_llm_proactive_message",
+            "allow_owner_internal_discussion",
             "enable_llm_proactive_persona_judge",
             "enable_reaction_expression_experiment",
             "enable_maslow_motivation_experiment",
@@ -26664,6 +26666,7 @@ class PrivateCompanionPageApi(
             "enable_proactive_message_review",
             "enable_smart_silence",
             "enable_llm_proactive_message",
+            "allow_owner_internal_discussion",
             "enable_llm_proactive_persona_judge",
             "enable_reaction_expression_experiment",
             "enable_maslow_motivation_experiment",

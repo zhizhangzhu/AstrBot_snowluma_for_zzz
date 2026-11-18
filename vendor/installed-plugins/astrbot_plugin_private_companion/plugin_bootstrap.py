@@ -939,6 +939,7 @@ def _initialize_proactive_and_reaction_config(self: Any, c: Any) -> None:
         10,
         600,
     )
+    self.allow_owner_internal_discussion = self._cfg_bool(c, "allow_owner_internal_discussion", False)
     self.enable_llm_proactive_persona_judge = self._cfg_bool(c, "enable_llm_proactive_persona_judge", True)
     self.proactive_persona_judge_provider_id = self._cfg_str(c, "PROACTIVE_PERSONA_JUDGE_PROVIDER_ID", "")
     self.proactive_persona_judge_send_threshold = self._cfg_int(c, "proactive_persona_judge_send_threshold", 62, 0, 100)

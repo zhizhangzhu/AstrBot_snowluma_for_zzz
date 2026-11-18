@@ -1665,6 +1665,12 @@
     "default": true,
     "invisible": true
   },
+  "allow_owner_internal_discussion": {
+    "description": "允许向主要用户说明内部机制",
+    "type": "bool",
+    "default": false,
+    "hint": "仅当前人格与已核验主要用户的私聊生效。允许解释模型、插件、记忆、工具、配置和开发审批，不再仅按这些词语判定为机制泄露。其他用户与群聊保持原控制；各人格独立，默认关闭。"
+  },
   "PROACTIVE_PERSONA_JUDGE_PROVIDER_ID": {
     "description": "Legacy flat config: 主动人格判定模型",
     "type": "string",
@@ -6687,6 +6693,12 @@
         "type": "bool",
         "hint": "开启后，主动计划到点前会先让模型判断这个念头是否贴合当前角色、世界观和关系边界。未回应、动机偏弱、表达温度或自然度不足等软质量问题会作为正文收敛与改写建议，不会自动降低发送频率；只有明确拒绝、休息、免打扰、隐私、串用户、内部机制、世界观冲突或无来源事实等硬风险才会延后或丢弃。关闭后只使用本地判定。",
         "default": true
+      },
+      "allow_owner_internal_discussion": {
+        "description": "允许向主要用户说明内部机制",
+        "type": "bool",
+        "default": false,
+        "hint": "仅当前人格与已核验主要用户的私聊生效。允许解释模型、插件、记忆、工具、配置和开发审批，不再仅按这些词语判定为机制泄露。其他用户与群聊保持原控制；各人格独立，默认关闭。"
       },
       "PROACTIVE_PERSONA_JUDGE_PROVIDER_ID": {
         "description": "主动人格判定模型",

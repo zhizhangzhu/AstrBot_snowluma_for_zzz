@@ -29,7 +29,7 @@ from .worker import WorkerClient
 NAME = 'astrbot_plugin_autonomous_development'
 
 
-@register(NAME, 'zhizhangzhu', '小小情自主成长：自主配置、隔离开发、人工Wiki和全局费用', '0.2.2')
+@register(NAME, 'zhizhangzhu', '小小情自主成长：自主配置、隔离开发、人工Wiki和全局费用', '0.2.3')
 class AutonomousDevelopment(Star, Schedule):
     def __init__(self, context: Context, config: dict | None = None):
         super().__init__(context)
@@ -201,13 +201,13 @@ class AutonomousDevelopment(Star, Schedule):
             async with cp._data_lock:
                 for candidate in cp.data.get('proactive_candidate_pool', []):
                     origin = str(candidate.get('origin_event_id', ''))
-                    if (candidate.get('source') == 'development' and origin.startswith('approval_') and origin not in valid
+                    if (candidate.get('source') == 'development' and origin.startswith('approval_') and origin.split(':', 1)[0] not in valid
                         and candidate.get('status') in ('accepted', 'queued', 'pending', 'deferred', 'planned')):
                         candidate.update(status='cancelled', note='审批已处理、失效或开发已暂停', updated_ts=time.time())
                         changed = True
                 user = cp.data.get('users', {}).get(USER, {})
                 origin = str(user.get('planned_proactive_origin_event_id', ''))
-                if origin.startswith('approval_') and origin not in valid and not user.get('proactive_sending'):
+                if origin.startswith('approval_') and origin.split(':', 1)[0] not in valid and not user.get('proactive_sending'):
                     cp._clear_pending_proactive_plan(user)
                     changed = True
             if changed:
@@ -215,17 +215,23 @@ class AutonomousDevelopment(Star, Schedule):
         for approval in approvals:
             key = 'approval_notice:' + approval['id']
             last, revision = self.store.setting(key, {'offered': False, 'at': 0})
-            if last['offered'] or time.time() - last['at'] < 3600:
-                continue
             with companion_context(self.context) as cp:
                 user = cp.data.get('users', {}).get(USER)
                 if not user or user.get('umo') != PLATFORM + ':FriendMessage:' + USER:
+                    continue
+                checker = getattr(cp, '_owner_internal_discussion_allowed', None)
+                transparent = bool(callable(checker) and checker(user))
+                retry_internal = bool(transparent and not last.get('owner_transparency') and last['offered']
+                    and any(c.get('source') == 'development' and c.get('origin_event_id') == approval['id']
+                            and c.get('status') == 'blocked' and '内部机制' in str(c.get('note', ''))
+                            for c in cp.data.get('proactive_candidate_pool', [])))
+                if not retry_internal and (last['offered'] or time.time() - last['at'] < 3600):
                     continue
                 now = time.time()
                 candidate = {'source': 'development', 'reason': 'development_approval', 'action': 'message',
                     'scheduled_ts': now + 60, 'window_start_at': now, 'preferred_ts': now + 60,
                     'best_until_at': approval['expires'], 'expire_at': approval['expires'],
-                    'origin_event_id': approval['id'], 'topic': '有一项自主开发方案需要猪猪审核：' + approval['goal'],
+                    'origin_event_id': approval['id'] + (':owner-discussion' if retry_internal else ''), 'topic': '有一项自主开发方案需要主要用户审核：' + approval['goal'],
                     'motive': '按你的人格自然说明为什么想做、方案范围及待批准的阶段。仅说明真实待审方案，不声称已修改；不替用户批准，不催促。'
                         '告诉用户可在自主成长页查看，或发送 /开发批准 ' + approval['id'],
                     'score': 78, 'context_key': 'planned_development_context', 'context': approval}
@@ -233,7 +239,7 @@ class AutonomousDevelopment(Star, Schedule):
                     offered = bool(cp._offer_proactive_candidate(USER, user, candidate))
                 if offered:
                     cp._schedule_data_save(sections={'users', 'proactive_candidate_pool'}, delay=.5)
-            self.store.set_setting(key, {'offered': offered, 'at': time.time()}, revision)
+            self.store.set_setting(key, {'offered': offered, 'at': time.time(), 'owner_transparency': transparent}, revision)
 
     @filter.on_llm_request(priority=-310090)
     async def on_llm_request(self, event: AstrMessageEvent, req: ProviderRequest):

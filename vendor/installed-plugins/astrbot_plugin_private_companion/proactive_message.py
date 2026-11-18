@@ -2802,7 +2802,15 @@ class ProactiveMessageMixin(FinalResponsePersistenceMixin):
                 pass
         return ""
 
+    def _internal_provider_error_for_recipient(self, text, user=None, *, umo=""):
+        if not self._looks_like_internal_provider_error_text(text):
+            return False
+        from .owner_transparency import allowed, protocol_payload
+        return not (allowed(self, user, umo=umo) and not protocol_payload(text))
+
     async def _resolve_proactive_persona_prompt(self, user: dict[str, Any] | None = None, *, umo: str = "") -> str:
+        from .owner_transparency import allowed, DIRECTIVE
+        disclosure = DIRECTIVE + "\n\n" if allowed(self, user, umo=umo) else ""
         session = str(umo or (user.get("umo") if isinstance(user, dict) else "") or "").strip()
         refresher = getattr(self, "_refresh_default_persona_prompt", None)
         if callable(refresher):
@@ -2810,18 +2818,18 @@ class ProactiveMessageMixin(FinalResponsePersistenceMixin):
                 resolved = await refresher(session)
                 text = str(resolved or "").strip()
                 if text:
-                    return text
+                    return disclosure + text
             except Exception as exc:
                 logger.debug("主动链解析会话人格失败: session=%s error=%s", _single_line(session, 100), _single_line(exc, 120))
         getter = getattr(self, "_get_default_persona_prompt", None)
         if callable(getter):
             try:
-                return str(getter(session) or "").strip()
+                return disclosure + str(getter(session) or "").strip()
             except TypeError:
-                return str(getter() or "").strip()
+                return disclosure + str(getter() or "").strip()
             except Exception:
                 pass
-        return ""
+        return disclosure
 
     def _wrong_proactive_recipient_address(self, text: Any, user: dict[str, Any] | None, name: str = "") -> str:
         cleaned = _single_line(text, 600)
@@ -4706,7 +4714,7 @@ class ProactiveMessageMixin(FinalResponsePersistenceMixin):
             SendMessageToUserTool.call = original_call
         return result, captured
 
-    def _captured_send_plain_text(self, captured_tool_sends: list[Any]) -> str:
+    def _captured_send_plain_text(self, captured_tool_sends: list[Any], *, user=None) -> str:
         if not captured_tool_sends:
             return ""
         captured_text_parts: list[str] = []
@@ -4719,7 +4727,7 @@ class ProactiveMessageMixin(FinalResponsePersistenceMixin):
                     continue
                 if str(item.get("type") or "").strip().lower() != "plain":
                     continue
-                text_value = self._sanitize_captured_plain_text(item.get("text"))
+                text_value = (self._sanitize_captured_plain_text(item.get("text"), user=user) if user is not None else self._sanitize_captured_plain_text(item.get("text")))
                 if text_value:
                     captured_text_parts.append(text_value)
         return "\n".join(captured_text_parts).strip()
@@ -5193,7 +5201,7 @@ class ProactiveMessageMixin(FinalResponsePersistenceMixin):
                     cache = {}
                     self._framework_deferred_photo_cache = cache
                 deferred_caption = self._sanitize_captured_plain_text(
-                    getattr(event, "_private_companion_photo_tool_deferred_caption", "")
+                    getattr(event, "_private_companion_photo_tool_deferred_caption", ""), user=user
                 )
                 cache[cache_key] = {
                     "path": deferred_path,
@@ -5218,7 +5226,7 @@ class ProactiveMessageMixin(FinalResponsePersistenceMixin):
         llm_resp = runner.get_final_llm_resp() if runner else None
         text = str(getattr(llm_resp, "completion_text", "") or "").strip()
         response_role = str(getattr(llm_resp, "role", "") or "").strip().lower()
-        captured_text = self._captured_send_plain_text(captured_tool_sends)
+        captured_text = (self._captured_send_plain_text(captured_tool_sends, user=user) if user is not None else self._captured_send_plain_text(captured_tool_sends))
         if captured_text:
             if text and self._framework_agent_meta_summary_leak(text):
                 logger.warning(
@@ -6563,7 +6571,7 @@ class ProactiveMessageMixin(FinalResponsePersistenceMixin):
         return "复核理由沿用了过期早间/睡前语境，已改按当前运行态放行"
 
     @staticmethod
-    def _proactive_rewrite_blacklist_reason(text: str) -> str:
+    def _proactive_rewrite_blacklist_reason(text: str, *, allow_internal_discussion: bool = False) -> str:
         """Reject structured model leakage without blocking ordinary chat words."""
         candidate = str(text or "")
         if not candidate:
@@ -6576,6 +6584,8 @@ class ProactiveMessageMixin(FinalResponsePersistenceMixin):
             (r"[\"'](?:decision|text|reason|delay_minutes|planned_reason)[\"']\s*:", "改写残留 JSON 字段"),
         )
         for pattern, reason in patterns:
+            if allow_internal_discussion and reason in {"改写暴露模型身份", "改写残留内部流程"}:
+                continue
             if re.search(pattern, candidate, re.IGNORECASE | re.DOTALL):
                 return reason
         return ""
@@ -6623,12 +6633,16 @@ class ProactiveMessageMixin(FinalResponsePersistenceMixin):
         meta_leak_checker = getattr(self, "_response_review_meta_leak_reason", None)
         if callable(meta_leak_checker) and meta_leak_checker(candidate):
             return None
-        if self._framework_agent_meta_summary_leak(candidate):
+        from .owner_transparency import allowed, protocol_payload
+        transparent = allowed(self, current_user) and not protocol_payload(candidate)
+        if not transparent and self._framework_agent_meta_summary_leak(candidate):
             return None
         original_length = len(str(original_text or "").strip())
         if original_length and len(candidate) > max(original_length + 60, 240):
             return None
-        if self._proactive_rewrite_blacklist_reason(candidate):
+        blacklist = (self._proactive_rewrite_blacklist_reason(candidate, allow_internal_discussion=True)
+                     if transparent else self._proactive_rewrite_blacklist_reason(candidate))
+        if blacklist:
             return None
         if reason in {"bili_video_share", "news_share", "web_exploration_share"}:
             if self._external_share_source_consistency_decision(
@@ -7135,6 +7149,9 @@ class ProactiveMessageMixin(FinalResponsePersistenceMixin):
                 candidate=text,
             )
         )["user"]
+        from .owner_transparency import allowed, DIRECTIVE
+        if allowed(self, user):
+            prompt += "\n\n" + DIRECTIVE
         started = time.perf_counter()
         review_provider_id = self._task_provider(
             _persona_provider_id(self, "RESPONSE_REVIEW_PROVIDER_ID", "response_review_provider_id", "fast"),
@@ -7350,7 +7367,7 @@ class ProactiveMessageMixin(FinalResponsePersistenceMixin):
                     continue
                 item_type = str(item.get("type") or "").strip().lower()
                 if item_type == "plain":
-                    text_value = self._sanitize_captured_plain_text(item.get("text"))
+                    text_value = self._sanitize_captured_plain_text(item.get("text"), umo=cache_key)
                     if text_value:
                         text_parts.append(text_value)
                     continue
@@ -7457,7 +7474,9 @@ class ProactiveMessageMixin(FinalResponsePersistenceMixin):
                 return component_cls(name=name, url=url_value)
         return None
 
-    def _sanitize_captured_plain_text(self, raw_text: Any) -> str:
+    def _sanitize_captured_plain_text(self, raw_text: Any, *, user=None, umo="") -> str:
+        from .owner_transparency import allowed, protocol_payload
+        transparent = allowed(self, user, umo=umo) and not protocol_payload(raw_text)
         text = str(raw_text or "").strip()
         if not text:
             return ""
@@ -7466,9 +7485,9 @@ class ProactiveMessageMixin(FinalResponsePersistenceMixin):
             line = raw_line.strip()
             if not line:
                 continue
-            if self._is_proactive_delivery_receipt_text(line):
+            if not transparent and self._is_proactive_delivery_receipt_text(line):
                 continue
-            if self._looks_like_internal_provider_error_text(line):
+            if self._internal_provider_error_for_recipient(line, user, umo=umo):
                 continue
             kept.append(line)
         cleaned = "\n".join(kept).strip().strip('"').strip("'")
@@ -7479,7 +7498,7 @@ class ProactiveMessageMixin(FinalResponsePersistenceMixin):
         else:
             cleaned = re.sub(r"</?(?:pc[_-]?tts|t{2,}s)\b[^>]*>", "", cleaned, flags=re.IGNORECASE).strip()
         cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
-        if self._looks_like_internal_provider_error_text(cleaned):
+        if self._internal_provider_error_for_recipient(cleaned, user, umo=umo):
             return ""
         return cleaned[:260]
 
@@ -7825,7 +7844,7 @@ class ProactiveMessageMixin(FinalResponsePersistenceMixin):
                 f"\n{LLM_SEGMENT_MARKER}\n".join(bounded_segments),
                 "",
             ) if bounded_segments else ("", "自主分段正文处理后为空")
-        if self._looks_like_internal_provider_error_text(raw_text):
+        if self._internal_provider_error_for_recipient(raw_text, user):
             logger.warning(
                 "主动正文生成收到 Provider 错误正文，跳过清洗并进入回退: user=%s reason=%s",
                 _single_line(user.get("user_id"), 40),
@@ -8320,7 +8339,7 @@ class ProactiveMessageMixin(FinalResponsePersistenceMixin):
             action_context=action_context,
             has_real_image="真实图片文件：" in action_context or "图片路径：" in action_context,
         )
-        if self._looks_like_internal_provider_error_text(candidate):
+        if self._internal_provider_error_for_recipient(candidate, user):
             logger.warning(
                 "回复/主动复核返回 Provider 错误正文，已丢弃: task=response_review"
             )
@@ -17179,7 +17198,9 @@ class ProactiveMessageMixin(FinalResponsePersistenceMixin):
         action: str = "",
         source: str = "send",
     ) -> dict[str, Any]:
+        from .owner_transparency import allowed, protocol_payload
         raw = str(text or "").strip()
+        transparent = allowed(self, umo=umo) and not protocol_payload(raw)
         has_media = bool(_path_text(image_path, 1000)) or bool(extra_components)
         if not raw:
             sticker_pending_getter = getattr(self, "_proactive_sticker_only_pending", None)
@@ -17190,7 +17211,7 @@ class ProactiveMessageMixin(FinalResponsePersistenceMixin):
             if has_media or sticker_only_pending:
                 return {"decision": "send", "text": "", "reason": ""}
             return {"decision": "drop", "text": "", "reason": "主动行为没有产出可发送内容", "hard": True}
-        if self._looks_like_internal_provider_error_text(raw):
+        if self._internal_provider_error_for_recipient(raw, umo=umo):
             return {"decision": "drop", "text": "", "reason": "主动正文是模型/工具调用失败信息", "hard": True}
 
         kept_lines: list[str] = []
@@ -17199,7 +17220,7 @@ class ProactiveMessageMixin(FinalResponsePersistenceMixin):
             line = raw_line.strip()
             if not line:
                 continue
-            if (
+            if not transparent and (
                 self._is_proactive_delivery_receipt_text(line)
                 or self._is_proactive_instruction_leak_text(line)
                 or self._framework_agent_meta_summary_leak(line)
@@ -17215,11 +17236,11 @@ class ProactiveMessageMixin(FinalResponsePersistenceMixin):
                 return {"decision": "rewrite", "text": "", "reason": "已清理主动正文中的内部提示词/执行回执残留"}
             return {"decision": "drop", "text": "", "reason": "主动正文只剩内部提示词/执行回执残留", "hard": True}
 
-        if self._is_proactive_delivery_receipt_text(raw):
+        if not transparent and self._is_proactive_delivery_receipt_text(raw):
             return {"decision": "drop", "text": "", "reason": "主动正文是工具/执行状态回执", "hard": True}
-        if self._is_proactive_instruction_leak_text(raw):
+        if not transparent and self._is_proactive_instruction_leak_text(raw):
             return {"decision": "drop", "text": "", "reason": "主动正文疑似内部提示词/发送指令泄漏", "hard": True}
-        if self._framework_agent_meta_summary_leak(raw):
+        if not transparent and self._framework_agent_meta_summary_leak(raw):
             return {"decision": "drop", "text": "", "reason": "主动正文疑似工具循环/内部发送摘要泄漏", "hard": True}
 
         return {"decision": "send", "text": raw, "reason": ""}

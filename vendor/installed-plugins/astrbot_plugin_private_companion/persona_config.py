@@ -19,13 +19,14 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Iterator, Mapping
 
 
-PERSONA_SETTINGS_SCHEMA_VERSION = 17
+PERSONA_SETTINGS_SCHEMA_VERSION = 18
 PERSONA_CONFIG_SCHEMA_VERSION = PERSONA_SETTINGS_SCHEMA_VERSION
 SCOPE_MANIFEST_VERSION = 1
 PERSONA_SETTINGS_KEY = "persona_settings"
 PERSONA_SETTINGS_VERSION_KEY = "persona_settings_schema_version"
 PERSONA_SETTINGS_REVISION_KEY = "persona_settings_revision"
 PERSONA_SETTINGS_NEW_KEYS_BY_VERSION: dict[int, tuple[str, ...]] = {
+    18: ("allow_owner_internal_discussion",),
     17: ("qzone_use_related_notifications",),
     16: ("enable_real_schedule_daily_plan", "real_schedule_daily_plan_time", "real_schedule_daily_plan_items"),
     15: ("enable_private_quote_reply", "private_quote_candidate_limit", "private_quote_max_age_hours"),

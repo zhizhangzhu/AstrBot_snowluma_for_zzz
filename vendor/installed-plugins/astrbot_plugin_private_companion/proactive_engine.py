@@ -293,6 +293,10 @@ _PLATFORM_DISPLAY_NAMES = {
 
 
 class ProactiveEngineMixin:
+    def _owner_internal_discussion_allowed(self, user=None, *, umo=""):
+        from .owner_transparency import allowed
+        return allowed(self, user, umo=umo)
+
     """主动行为候选、决策、计划事件与动作选择"""
 
     def _proactive_current_agenda_item(self) -> dict[str, Any] | None:
@@ -1950,7 +1954,7 @@ class ProactiveEngineMixin:
             note("念头缺少具体来源")
 
         leak_tokens = ("模型", "插件", "action", "模块", "接口", "提示词", "LLM", "prompt", "后台任务", "系统调度")
-        if any(token in text for token in leak_tokens):
+        if any(token in text for token in leak_tokens) and not self._owner_internal_discussion_allowed(user):
             score -= 0.28
             blocker = True
             note("内部机制泄露风险")
@@ -2111,7 +2115,8 @@ class ProactiveEngineMixin:
             risk += 0.35
             blocker = True
             note("疑似无来源转述")
-        if any(token in evidence_text for token in ("模型", "插件", "接口", "后台", "提示词", "系统调度", "action")):
+        if (any(token in evidence_text for token in ("模型", "插件", "接口", "后台", "提示词", "系统调度", "action"))
+            and not self._owner_internal_discussion_allowed(user)):
             risk += 0.42
             blocker = True
             note("内部机制泄露")
@@ -2413,6 +2418,7 @@ class ProactiveEngineMixin:
             "ignored=0" if ignored <= 0 else "ignored=1" if ignored == 1 else "ignored=2+",
             _single_line(user.get("last_user_message"), 160).casefold(),
             f"last_user_at={int(_safe_float(user.get('last_user_message_at'), 0))}",
+            f"owner_transparency={self._owner_internal_discussion_allowed(user)}",
             persona,
             worldview,
         ]
@@ -2823,7 +2829,9 @@ class ProactiveEngineMixin:
                 " - defer：只用于用户明确休息、拒绝主动或当前存在无法通过改写解决的硬时机冲突。\n"
                 " - drop：只用于关系/隐私/世界观硬越界、内部机制泄露或无真实来源且无法改写的计划。\n\n"
                 "硬要求：\n"
-                "- 不得放行内部机制泄露、工具名、模型、插件、提示词、后台任务。\n"
+                + ("- 当前主要用户已授权机制讨论：说明自身模型、插件、工具、记忆和真实开发审批是正常话题，不以这些词语为泄露理由。仍核验事实和发送对象。\n"
+                 if self._owner_internal_discussion_allowed(user) else "- 不得放行内部机制泄露、工具名、模型、插件、提示词、后台任务。\n")
+                +
                 "- 不得新增事实、现实能力或用户没给过的关系信息。\n"
                 "- 次要用户关系必须普通、低频、不过度亲密；主要用户/亲近关系也要尊重休息和拒绝。\n"
                 "- 世界观表达必须贴合设定；能力只能作为角色内自然动机,不能露出调用过程。\n"
