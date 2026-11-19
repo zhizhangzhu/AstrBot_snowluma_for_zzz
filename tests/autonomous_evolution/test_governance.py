@@ -115,3 +115,24 @@ def test_resume_uses_actual_receipts_instead_of_restarting_a_committed_workspace
     assert Tasks.resume_state({'commit':'a'*40,'uploaded':True})=='uploaded'
     assert Tasks.resume_state({'windows':{'state':'awaiting_windows_channel'}})=='awaiting_windows_channel'
     assert Tasks.resume_state({'resume_state':'running','plan':{}})=='running'
+
+
+def test_stale_plan_can_be_replanned_without_reusing_approval(tmp_path):
+    from astrbot_plugin_autonomous_development.db import Store
+    from astrbot_plugin_autonomous_development.tasks import Tasks
+    from astrbot_plugin_autonomous_development.integrations import owner_identity
+    store=Store(tmp_path/'replan.sqlite3');tasks=Tasks(store);identity=owner_identity()
+    row=tasks.create(identity,'修复提醒晚到')
+    row=tasks.plan(identity,row['id'],{'paths':['plugins/example/main.py'],'summary':'只修提醒'})
+    approval=tasks.request_approval(identity,row['id'],'modify')
+    row=tasks.update(identity,row['id'],state='paused',payload={**row['payload'],'reason':'方案源码基线已变化，请核对并重新规划'})
+    assert tasks.chat_summary(row)['next_action']=='replan'
+    result=tasks.replan(identity,row['id'])
+    assert result['state']=='proposed' and 'plan_digest' not in result['payload']
+    assert store.rows('select state from approvals where id=?',(approval['id'],))[0]['state']=='revoked'
+    with pytest.raises(PermissionError):tasks.decide(identity,approval['id'],'approved')
+    row=tasks.update(identity,row['id'],state='paused',payload={'reason':'人工暂停'})
+    with pytest.raises(PermissionError):tasks.replan(identity,row['id'])
+    row=tasks.update(identity,row['id'],payload={'reason':'方案源码基线已变化','base_commit':'already-implemented'})
+    with pytest.raises(PermissionError):tasks.replan(identity,row['id'])
+    store.close()

@@ -101,6 +101,35 @@ class Tasks:
         payload = {**row['payload'], 'plan': plan, 'plan_digest': digest(plan), 'risk': risk(plan['paths'])}
         return self.update(identity, tid, state='awaiting_approval' if need_approval(self.mode()['mode'], plan['paths'], 'modify') else 'ready', payload=payload)
 
+    def can_replan(self, row):
+        payload = row['payload']
+        return (row['state'] in ('paused', 'failed')
+            and '方案源码基线已变化' in str(payload.get('reason', ''))
+            and not any(payload.get(k) for k in ('base_commit','commit','artifact','deployed','uploaded','windows')))
+
+    def replan(self, identity, tid):
+        if self.mode()['mode'] == 'off':
+            raise PermissionError('自主开发已关闭')
+        row = self.get(identity, tid)
+        if not self.can_replan(row):
+            raise PermissionError('只可重规划尚未实施且因源码基线变化暂停的方案；人工暂停或已有工程产物须人工核验')
+        payload = dict(row['payload'])
+        previous = list(payload.get('superseded_plans', []))[-3:]
+        previous.append({'plan':payload.get('plan'), 'digest':payload.get('plan_digest'), 'reason':payload.get('reason')})
+        for key in ('plan','plan_digest','design_queries','reason','error_type','retries','risk','resume_state'):
+            payload.pop(key, None)
+        payload['superseded_plans'] = previous
+        with self.store.transaction() as db:
+            db.execute("UPDATE approvals SET state='revoked' WHERE task=? AND state IN ('approved','pending')", (tid,))
+        return self.update(identity, tid, state='proposed', payload=payload, expected=row['revision'])
+
+    def chat_summary(self, row):
+        payload = row['payload']
+        return {k:row[k] for k in ('id','state','revision','goal')} | {
+            'reason':str(payload.get('reason', ''))[:400], 'can_replan':self.can_replan(row),
+            'plan_summary':str(payload.get('plan', {}).get('summary', ''))[:1400],
+            'next_action': 'replan' if self.can_replan(row) else 'await_owner_review' if row['state']=='awaiting_approval' else row['state']}
+
     def request_approval(self, identity, tid, stage):
         row = self.get(identity, tid)
         if stage not in ('modify', 'commit', 'push', 'deploy', 'release'):

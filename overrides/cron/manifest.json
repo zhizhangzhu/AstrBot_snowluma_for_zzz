@@ -1,0 +1,13 @@
+{
+  "astrbot_version": "v4.29.1",
+  "files": {
+    "manager.py": {
+      "source_sha256": "3c0a1ff2421b181b4f20632d83ed66f390e61d591e43d54995799fb280e3f5f5",
+      "override_sha256": "f757d97175e62a8e0854c2d0a340050d5fa770787f4a5e3827dc1d0479955de8"
+    },
+    "cron_tools.py": {
+      "source_sha256": "68d52059ce2982dd8efa7a57ca3a2884625c08233fb39b4c1a83a3af90fd8dcf",
+      "override_sha256": "5d59a6cd6faa00010118f7d0889cf61014f83846102ee17b7e79a01044b589d6"
+    }
+  }
+}

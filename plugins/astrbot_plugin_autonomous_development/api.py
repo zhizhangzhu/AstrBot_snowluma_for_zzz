@@ -151,6 +151,7 @@ class Administration:
         if action == 'task_resume':
             row = p.tasks.get(identity, data['id'])
             if row['state'] not in ('paused', 'failed'): raise ValueError('此任务无需恢复')
+            if p.tasks.can_replan(row): return p.tasks.replan(identity, row['id'])
             state = p.tasks.resume_state(row['payload'])
             return p.tasks.update(identity, row['id'], state=state, payload={k:v for k,v in {**row['payload'], 'retries':0}.items() if k!='resume_state'})
         if action == 'approval_request': return p.tasks.request_approval(identity, data['id'], data['stage'])

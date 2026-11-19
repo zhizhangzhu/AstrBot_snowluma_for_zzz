@@ -20,7 +20,7 @@ from .tasks import TERMINAL
 
 ORIGIN = PLATFORM + ':FriendMessage:' + USER
 CAPABILITY = 'extension:astrbot_plugin_autonomous_development:'
-NEED = re.compile(r'自主开发|(?:开发|修复|改进|优化|修改|增加|新增|扩展|拓展).{0,45}(?:功能|插件|机制|记忆|桌宠|能力)|(?:功能|插件|机制).{0,30}(?:bug|故障|报错|问题)', re.I)
+NEED = re.compile(r'自主开发|(?:开发|修复|改进|优化|修改|增加|新增|扩展|拓展).{0,45}(?:功能|插件|机制|记忆|桌宠|能力)|(?:功能|插件|机制|逻辑).{0,30}(?:bug|故障|报错|问题)|(?:自行|自己|后台).{0,20}(?:修复|排查|检查).{0,30}(?:问题|逻辑|一下|下)|有问题.{0,20}自行修复', re.I)
 
 
 def text_content(content, limit=1400):

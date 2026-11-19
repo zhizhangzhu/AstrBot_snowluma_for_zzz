@@ -155,3 +155,14 @@ async def test_daily_and_feedback_admission_deduplicate_and_obey_grants(owner, m
     owner.store.set_setting('development', {'mode': 'off'})
     owner.context = None
     await owner.maintain_development_queue()  # Does not even open another persona when disabled.
+
+
+def test_indirect_owner_bug_feedback_is_retained(tmp_path):
+    from astrbot_plugin_autonomous_development.db import Store
+    from astrbot_plugin_autonomous_development.discovery import DevelopmentDiscovery
+    owner=DevelopmentDiscovery();owner.store=Store(tmp_path/'inputs.sqlite3')
+    text='你可以自己后台看一看，是不是哪里逻辑有什么问题呀！有问题的话你可以自行修复一下哦'
+    owner.remember_development_hint(text,'verified_owner_message')
+    saved=owner.store.setting('development_inputs',{})[0]
+    assert saved['serial']==1 and saved['items'][0]['text']==text
+    owner.store.close()

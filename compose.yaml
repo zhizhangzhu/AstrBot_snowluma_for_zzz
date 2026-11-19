@@ -24,6 +24,8 @@ services:
       - ./data/snowluma/browser-session:/run/qq-browser-session:ro
       - ./bots/chuxiaoqing/data/snowluma/browser-session:/run/chuxiaoqing-browser-session:ro
       - ./overrides/repository.py:/AstrBot/astrbot/core/repository.py:ro
+      - ./overrides/cron/manager.py:/AstrBot/astrbot/core/cron/manager.py:ro
+      - ./overrides/cron/cron_tools.py:/AstrBot/astrbot/core/tools/cron_tools.py:ro
       - ./overrides/network:/opt/xiaoxiaoqing-network:ro
     networks:
       - bot

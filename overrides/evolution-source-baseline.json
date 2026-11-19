@@ -569,7 +569,8 @@
         "contact_boundary.py": "d46c287c633f0396e7d19fd55e33dc7a8c691ca6e977bf0de6584484fce2355b",
         "qzone_interactions.py": "a0ed36e447218dadc4fdcb06c45b704567b015fd5016e9d0f0db252b2e586da2",
         "qzone_notifications.py": "7edfdd0575f89b424ced14e7cec6304e8f4380a3e77d79e7481fb2e74f876c2d",
-        "owner_transparency.py": "950535f5d0c09c4b66ee746e0301309666bd68d6360bbfc8635eea7348a0ba2f"
+        "owner_transparency.py": "950535f5d0c09c4b66ee746e0301309666bd68d6360bbfc8635eea7348a0ba2f",
+        "scheduled_reminders.py": "8c88aa5138d4090905114b7e221b2a09ec5c796c0ddef58fd7171479f4d23ff1"
       }
     },
     "astrbot_plugin_memory_companion": {
