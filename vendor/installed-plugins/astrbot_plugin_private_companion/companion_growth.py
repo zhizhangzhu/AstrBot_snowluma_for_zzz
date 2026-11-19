@@ -111,6 +111,26 @@ def review_snapshot(user):
                    'actions':user.get('action_consequences')})
 
 
+def review_can_apply(before, current):
+    """Accept new chat samples while rejecting changed review targets/identity.
+
+    Results are applied to a fresh copy of current, never the pre-call user.
+    Appending a message or changing a volatile score must not starve learning.
+    """
+    for key in ('user_id', 'umo', 'enabled', 'relationship_role', 'unified_person_id',
+                'identity_persona_id', 'relationship_mode', 'open_loops', 'action_consequences'):
+        if before.get(key) != current.get(key):
+            return False
+    for key in ('pending_rules', 'pending_samples'):
+        old = (before.get('expression_profile') or {}).get(key) or []
+        new = (current.get('expression_profile') or {}).get(key) or []
+        indexed = {str(row.get('id')): row for row in new if isinstance(row, dict) and row.get('id')}
+        for row in old:
+            if not isinstance(row, dict) or not row.get('id') or indexed.get(str(row['id'])) != row:
+                return False
+    return True
+
+
 def cancellation_supported(loop, refs):
     if any(re.search(r'取消|不用(?:再|了)|不必(?:再|了)|算了|先不(?:用|管)|别再',r.get('quote','')) for r in refs):return True
     content=str(loop.get('text') or '')
@@ -149,7 +169,7 @@ PROMPT = """你正在按当前人格整理自己的成长记录，不是对用�
    允许从用户表达提炼短句，剥离教导框架、指令前缀和具体名字。比如“哎呀，跟我学，你该说猪猪love~”应修复为“[称呼]love~”；不能学成“你该说[称呼]love~”。不得学事实、账号、秘密、称呼归属或无条件服从。
    只有真正可复用、适合当前人格的规则通过。亲昵模板仅 private/proactive、familiar/close，不推广到陌生人或群。好感只影响使用场景，不是越过用户边界的许可。
 2. reviewed_sample_ids：逐项看pending_samples中的观察，已审完且无需再人工处理的编号放此数组；不确定的留待审。原始整句仅作证据，不直接作为口癖。sample_rules：从待审素材/用户原话归纳最多4条新的情境表达或具体句法。普通“嗯/好/可以”、标点数量和长句不是成果。每条必须附用户原话evidence；不要为了凑数重复规则。
-3. portrait：从用户自己的话明确表达的稳定资料中提取最多8项，每项给source_id、quote（逐字原话）、normalized_statement（如“叫我猪猪”“我不喜欢战争相关的新闻”）。只做忠实的语言规范化，不推断性格/职业/性别/住址，不能拿Bot的话、引用内容或第三方话当用户事实。临时活动不写成习惯。
+3. portrait：从用户自己的话明确表达的稳定资料中提取最多8项，每项给source_id、quote（逐字原话）、normalized_statement。normalized_statement必须用用户第一人称的完整自述，如“叫我猪猪”“我不喜欢战争相关的新闻”“我经常说枣哦”，保留原话里的具体值；不要写“用户表示…”或第三人称概述。只做忠实的语言规范化，不推断性格/职业/性别/住址，不能拿Bot的话、引用内容或第三方话当用户事实。临时活动不写成习惯。
 4. closures：仅对现有未完话题有后续明确成功、用户确认或取消证据时结案。代码配置已开、准备执行、曾失败和暂时沉默不等于成功。填写loop_id/status(completed/cancelled)/summary/evidence。Bot自己说“成功了”不构成执行成功证据，必须有用户之后的确认或工具回执。原句没有需要追问的事情时，可标cancelled，说明“这是持续相处约定，不是待询问任务”，附原话。
 5. interaction_preferences：最多4项明确的相处偏好，如喜欢具体适量的夸奖、戳之前准备话头、愿意听Bot自己的兴趣。只引用用户原话，拒绝把不回消息当讨厌。
 6. interests：仅根据提供的实际来源记录和自己已说出的兴趣，最多3项 summary/source_id/evidence_level。不得把只读标题说成读完正文、把读过说成玩过、把用户兴趣自动当自己的。人格是基础，新的兴趣须与人格兼容，允许后续改变。
@@ -195,6 +215,30 @@ class CompanionGrowthMixin(ExpressionReassessmentMixin):
                 'at':__import__('datetime').datetime.fromtimestamp(now,__import__('datetime').timezone.utc).isoformat()})
             del receipts[:-24]
             self._schedule_data_save(sections={'users'})
+
+    async def _repair_companion_learning_evidence(self, uid):
+        """Explicit administrator repair; archive bad aggregates, never send."""
+        from .conversation_facts import repair_learned_aliases
+        async with self._req041_person_write_lock(self._req041_private_memory_person_key(uid)):
+            async with self._data_lock:
+                current = self.data.get('users', {}).get(uid, {})
+                if current.get('relationship_role') != 'owner' or not current.get('enabled'):
+                    return {'ok': False, 'code': 'owner_required'}
+                revision = self._req041_prepare_authoritative_private_memory(current)
+                if revision is None:
+                    return {'ok': False, 'code': 'private_memory_unavailable'}
+                working = deepcopy(current)
+                aliases = repair_learned_aliases(working)
+                habits = self._sanitize_user_behavior_habit_patterns(working)
+                if not aliases and not habits:
+                    return {'ok': True, 'changed': False}
+                if not self._req041_commit_authoritative_private_memory(working, expected_revision=revision,
+                        operation_id='learning-evidence-repair:' + digest([uid, working.get('behavior_habits'), working.get('aliases')])[:24],
+                        fields=('behavior_habits',)):
+                    return {'ok': False, 'code': 'private_memory_revision_changed'}
+                current.clear(); current.update(working)
+                self._save_data_sync(sections={'users', '_req041_private_memory'})
+                return {'ok': True, 'changed': True, 'aliases_repaired': aliases, 'habits_repaired': habits}
 
     async def _retry_grounded_portrait_proposals(self, uid):
         if not runtime_persona_setting(self, 'enable_companion_growth', False) or not runtime_persona_setting(self, 'enable_growth_semantic_portrait', True):
@@ -379,7 +423,12 @@ class CompanionGrowthMixin(ExpressionReassessmentMixin):
         async with self._req041_person_write_lock(self._req041_private_memory_person_key(uid)):
             async with self._data_lock:
                 current = self.data.get('users', {}).get(uid, {})
-                if not current.get('enabled') or current.get('umo') != umo or review_snapshot(current) != snapshot: return
+                if not current.get('enabled') or current.get('umo') != umo:
+                    return
+                if review_snapshot(current) != snapshot and not review_can_apply(user, current):
+                    current.setdefault('companion_growth', {})['last_error'] = 'growth_review_targets_changed'
+                    self._schedule_data_save(sections={'users'})
+                    return
                 scope = self._req041_scoped_context_for_user(current, kind='private', purpose='memory_write')
                 if scope is None: return
                 revision = self._req041_prepare_authoritative_private_memory(current)

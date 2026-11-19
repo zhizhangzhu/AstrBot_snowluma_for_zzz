@@ -56,7 +56,9 @@ def validate_normalization(item, row, *, user_id, bot_id, persona_id, session_id
     address=re.fullmatch(r'(?:大家|别人|朋友)(?:一般|都)?(?:称呼|叫)我(?:为)?[“\"「]?([^”\"」。.!！]{1,20})[”\"」]?[。.!！]?',statement)
     if address and re.search(r'都叫我|称呼|叫法',quote):
         statement='叫我'+address.group(1).strip()
-    candidates = extract_explicit_candidates(statement)
+    # Prefer the source itself. A faithful third-person model paraphrase must
+    # not erase a valid first-person statement already present in its quote.
+    candidates = extract_explicit_candidates(quote) or extract_explicit_candidates(statement)
     result = []
     for c in candidates:
         value = normalize_profile_value(c.get('profile_value'))
@@ -91,12 +93,14 @@ async def capture(service, *, profile_context, namespace_context, user_id, bot_i
     expected_persona = 'persona-' + hashlib.sha256(('persona:' + hashlib.sha256(persona_id.encode()).hexdigest()[:24]).encode()).hexdigest()[:32]
     if str(namespace_context.get('persona_id')) != expected_persona: return {'ok':False,'code':'portrait_namespace_mismatch','facts':0}
     rows = await service.store.get_timeline_by_ids([str(x.get('source_id','')) for x in items[:12] if isinstance(x,dict)])
-    total=0; accepted=[]
+    total=0; accepted=[]; rejected=[]
     for item in items[:12]:
         if not isinstance(item,dict):continue
         row=rows.get(str(item.get('source_id','')))
         candidates=validate_normalization(item,row,user_id=user_id,bot_id=bot_id,persona_id=persona_id,session_id=session_id)
-        if not candidates:continue
+        if not candidates:
+            rejected.append({'source_id':str(item.get('source_id','')), 'code':'portrait_no_grounded_candidate'})
+            continue
         meta=row.get('metadata') or {}
         if isinstance(meta,str):meta=json.loads(meta)
         original=str(row.get('content') or '').split('[引用链上下文]')[0].strip()
@@ -106,4 +110,4 @@ async def capture(service, *, profile_context, namespace_context, user_id, bot_i
         total+=int(result.get('facts',0)); accepted.extend({'dimension':c['dimension'],'summary':c['claim_summary'],
             'sensitivity':c['sensitivity'],'source_id':row['id']} for c in candidates)
     service._ensure_portrait_daily_dispatcher()
-    return {'ok':True,'code':'portrait_grounded_batch','facts':total,'accepted':accepted}
+    return {'ok':True,'code':'portrait_grounded_batch','facts':total,'accepted':accepted,'rejected':rejected}

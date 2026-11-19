@@ -521,6 +521,13 @@ def detect_private_companion_request(req: Any) -> dict[str, Any]:
         texts.extend(_plain_request_text(item) for item in fragments)
 
     surface = "\n".join(text for text in texts if text)
+    # Exact current-request text can prove a duplicate. A state marker alone
+    # says nothing about which user facts the other plugin actually supplied.
+    # The user's question may itself quote a fact; that is not proof that
+    # another plugin already supplied the trusted evidence for that fact.
+    current_surface = str(getattr(req, "system_prompt", "") or "")
+    if isinstance(fragments, list):
+        current_surface += "\n" + "\n".join(_plain_request_text(part) for part in fragments)
     markers = [marker for marker in PRIVATE_COMPANION_MARKERS if marker in surface]
     return {
         "has_any": bool("private_companion_" in surface or markers or fragments),
@@ -530,6 +537,7 @@ def detect_private_companion_request(req: Any) -> dict[str, Any]:
         "has_recall_query": "<!-- private_companion_recall_query_v1 -->" in surface,
         "has_turn_fragments": "<!-- private_companion_turn_fragments_start -->" in surface or isinstance(fragments, list),
         "markers": markers,
+        "current_profile_text": current_surface,
     }
 
 

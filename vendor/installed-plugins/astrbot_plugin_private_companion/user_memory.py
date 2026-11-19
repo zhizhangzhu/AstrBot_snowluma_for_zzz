@@ -5262,7 +5262,7 @@ class UserMemoryMixin:
             "饮食": r"(?:我.{0,10}(?:吃|饿|饱)|(?:还没吃|没吃|刚吃|吃完|饿了|好饿|饱了|去吃饭|准备吃))",
             "作息": r"(?:我.{0,10}(?:睡|醒|困|起床|熬夜)|(?:睡觉啦|准备睡|去睡了|刚睡醒|醒了|起床了|困了|睡不着|还没睡))",
             "学习工作": r"(?:我.{0,12}(?:学习|上班|下班|工作|上课|下课|写作业|考试|摸鱼)|(?:去上班|下班了|上课了|下课了|写作业|准备考试))",
-            "娱乐": r"(?:我.{0,12}(?:玩|看|刷|追)|(?:在玩|去玩|在看|刚看|最近看|正在刷|准备看).{0,20}(?:游戏|视频|番|漫画|小说|直播)?)",
+            "娱乐": r"(?:(?:我.{0,12}|在|去|刚|最近|正在|准备)(?:玩|看|刷|追).{0,20}(?:游戏|视频|番剧|动漫|漫画|小说|直播|电影|电视剧)|我(?:最近|正在|在|刚刚|刚|准备|打算)?玩(?!笑|梗)[^\s，。]{2,20}|(?:我)?(?:在|去|刚|最近|正在|准备)(?:玩游戏|打游戏|追番|追剧|刷视频))",
         }
         return bool(re.search(markers.get(kind, r"$^"), cleaned))
 
@@ -5407,6 +5407,17 @@ class UserMemoryMixin:
             if not isinstance(item, dict) or str(item.get("category") or "") not in allowed_categories:
                 continue
             evidence = str(item.get("last_seen_text") or "")
+            examples = item.get("examples") or []
+            if item.get("category") == "娱乐习惯" and any(
+                self._classify_user_habit_message(str(example))[0] != "娱乐习惯"
+                for example in examples
+            ):
+                # Old aggregates have no per-example dates. Quarantine rather
+                # than retaining an unverifiable count of independent days.
+                rejected = habits.setdefault("rejected_patterns", [])
+                rejected.append({**item, "review_reason": "历史娱乐证据混入普通查看或非本人活动，重新观察"})
+                del rejected[:-40]
+                continue
             if evidence:
                 category, _, _ = self._classify_user_habit_message(evidence)
                 if category != item.get("category"):

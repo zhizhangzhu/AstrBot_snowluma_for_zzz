@@ -19,6 +19,17 @@ def _platform_family(value: str | None) -> str:
 
 
 class VisibilityPolicy:
+    def registered_platform_alias(self, memory, ctx) -> bool:
+        """QQ adapter IDs are transport aliases only inside one verified Bot."""
+        from .bot_namespace import record_namespace, resolve
+        registered = self.namespace_bindings
+        current = resolve(registered, session=ctx.session_id, bot=ctx.bot_id, persona=ctx.persona_id)
+        if not current or record_namespace(memory, registered) != current:
+            return False
+        aliases = {"qq", current[0].casefold()}
+        return (_platform_family(memory.platform) in aliases
+                and _platform_family(ctx.platform) in aliases)
+
     def __init__(
         self,
         *,

@@ -234,6 +234,8 @@ _RECALL_GUIDANCE_HEADER = "<MemoryCompanion-Recall-Guidance>"
 _RECALL_GUIDANCE_FOOTER = "</MemoryCompanion-Recall-Guidance>"
 _RECALL_EVIDENCE_GUIDANCE = (
     "回想过去时，结合当前对话和已有记忆判断是否需要补查，查法由你选择。"
+    "用户询问以前说过的事情、偏好、共同用语，或指出你忘记时，若当前上下文没有具体依据，"
+    "先调用可用的回忆工具查证，再回答；不要用猜测替代查询，也不要把没查到说成用户从未说过。"
     "原始问答及后续更正可以帮助理解当时的意思；未找到的内容可能只是记录或检索缺口。"
     "让回答的确定程度与实际依据相称，清楚的直接说，不清楚的自然说明，保持平常的聊天方式。"
 )
@@ -7288,8 +7290,10 @@ class MemoryCompanionService:
             record = MemoryRecord(
                 id=self.stable_id("tool", note_type, ctx.session_id, content),
                 memory_type=memory_proposal.memory_type,
-                subject=self._bot_entity(ctx),
-                object=EntityRef(kind="user", id=ctx.user_id, name=ctx.user_name, role="conversation_partner"),
+                subject=(EntityRef(kind="user", id=ctx.user_id, name=ctx.user_name, role="user")
+                         if note_type in {"user_profile", "user_preference", "user_habit"} else self._bot_entity(ctx)),
+                object=(self._bot_entity(ctx) if note_type in {"user_profile", "user_preference", "user_habit"}
+                        else EntityRef(kind="user", id=ctx.user_id, name=ctx.user_name, role="conversation_partner")),
                 scope=ctx.scope,
                 session_id=ctx.session_id,
                 platform=ctx.platform,
@@ -9749,7 +9753,7 @@ class MemoryCompanionService:
         suppress_topic_shift_memory = (
             isolate_topic_shift
             and self._context_bool(ctx, "suppress_memory_on_topic_shift", True)
-            and not self._message_requests_memory_context(ctx.message_text)
+            and not self._message_is_contextual_memory_request(ctx.message_text)
             and not self._message_requests_personalized_context(ctx.message_text)
         )
         if decision.suppress_long_memory:
@@ -9915,7 +9919,9 @@ class MemoryCompanionService:
         if not published:
             reason = self._memory_companion_injection_payload(req).get("reason_code")
             if reason:
-                blocked.append({"id": "", "reason": reason, "content": ""})
+                # Keep publication failures inside the bounded diagnostic log,
+                # even when retrieval produced many keyword omissions first.
+                blocked.insert(0, {"id": "", "reason": reason, "content": ""})
         if self.config.bool("memory_injection.enable_injection_logs", True):
             await self.store.add_injection_log(
                 session_id=ctx.session_id,
@@ -11230,6 +11236,9 @@ class MemoryCompanionService:
             "我的性格",
             "我的口味",
             "我的习惯",
+            "我平时",
+            "我经常",
+            "我通常",
             "我的风格",
             "专属于我",
             "像平时那样",
@@ -11244,7 +11253,8 @@ class MemoryCompanionService:
         return any(marker in compact for marker in markers)
 
     def _message_is_contextual_memory_request(self, text: str) -> bool:
-        return self._message_requests_memory_context(text) or RetrievalEngine._looks_like_contextual_recall_query(text)
+        habit_question = bool(re.search(r"我(?:平时|经常|通常|一般).{0,30}(?:什么|哪|几点|怎么|吗|？|\?)", text))
+        return habit_question or self._message_requests_memory_context(text) or RetrievalEngine._looks_like_contextual_recall_query(text)
 
     def _message_has_explicit_memory_target(self, text: str) -> bool:
         compact = re.sub(r"\s+", "", clean_text(text, 800)).lower()
@@ -11951,7 +11961,15 @@ class MemoryCompanionService:
                 and not private_context_deferred
                 and not self._memory_companion_state_is_passive_only(companion_state)
             ):
-                drop("user_profile", "companion_context_detected:user_profile_slot_suppressed")
+                supplied = str(companion_state.get("current_profile_text") or "")
+                items = cleaned.get("user_profile") or []
+                kept = [item for item in items if not (
+                    len(str(item.memory.content or "").strip()) >= 4
+                    and str(item.memory.content).strip() in supplied
+                )]
+                if len(kept) != len(items):
+                    cleaned["user_profile"] = kept
+                    reasons.append("companion_context_detected:exact_user_profile_duplicate")
         return cleaned, reasons
 
     def _filter_companion_current_state_overlap(
@@ -13037,22 +13055,8 @@ class MemoryCompanionService:
             user_id=ctx.user_id,
             group_id=ctx.group_id,
         )
-        return self._complete_bot_namespace(SessionContext(
-            session_id=normalized["session_id"],
-            scope=normalized["scope"],
-            platform=normalized["platform"],
-            user_id=normalized["user_id"],
-            user_name=ctx.user_name,
-            group_id=normalized["group_id"],
-            group_name=ctx.group_name,
-            bot_id=ctx.bot_id,
-            persona_id=ctx.persona_id,
-            message_id=ctx.message_id,
-            message_text=ctx.message_text,
-            strict_session_only=ctx.strict_session_only,
-            preferred_address=ctx.preferred_address,
-            preferred_address_locked=ctx.preferred_address_locked,
-        ))
+        # Keep verified transport, relationship and expression projections.
+        return self._complete_bot_namespace(replace(ctx, **normalized))
 
     def stable_id(self, *parts: Any) -> str:
         raw = "|".join(clean_text(part, 500) for part in parts if part is not None)
@@ -13499,14 +13503,16 @@ class MemoryCompanionService:
                     scar_w = 0.0
                 if scar_w >= 0.55 and (is_late_night or low_energy):
                     policy = clean_text(metadata.get("mention_policy"), 60)
-                    if policy != "avoid_unless_asked":
-                        metadata = dict(metadata)
-                        metadata["mention_policy"] = "tone_only"
-                        metadata["_scene_gated"] = True
-                        try:
-                            memory.metadata = metadata
-                        except Exception:
-                            pass
+                    if policy != "avoid_unless_asked" and not re.search(
+                        r"(?:^|;)expression=uncertain(?:;|$)", str(getattr(item, "reason", ""))
+                    ):
+                        # Scene presentation is not a change to stored evidence.
+                        # Rewriting mention_policy changes memory_ref and used
+                        # to invalidate the whole reply package at night.
+                        item = SearchResult(memory=memory,
+                            score=float(getattr(item, "score", 0.0) or 0.0),
+                            reason=self._append_expression_reason(getattr(item, "reason", ""),
+                                "tone", "scar_scene_gate"))
                 gated.append(item)
             result[slot] = gated
         return result

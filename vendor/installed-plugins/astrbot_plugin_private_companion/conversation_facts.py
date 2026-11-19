@@ -32,6 +32,13 @@ def self_names(text):
             continue
         name = match.group(1).strip(' “「\"”」')
         name = re.sub(r'(?:就好啦|就好了|就好|哦|啦|呀|呢|吧|哟|喔|哈|~|～)+$', '', name)
+        # A plain assertion (including one ending in laughter) is not a name.
+        grammar = re.sub(r'[wW]+$', '', name).rstrip('哦啦呀呢吧喔哈')
+        if introduction and not preferred and not alias and (
+            re.match(r'^(?:不|没|会|能|要|在|很|挺|已经|可能|应该|肯定|真的)', grammar)
+            or grammar.endswith(('的', '行为', '事情', '状态'))
+        ):
+            continue
         if not re.fullmatch(r'[\w\u4e00-\u9fff·]{1,24}', name) or name.isdigit():
             continue
         if any(word in name for word in ('来自', '朋友', '恋人', '同学', '学生', '老师', '机器人', '模型', '你的', '一个', '管理员', '主人', '大人', '主子', '系统', '什么', '怎么', '哪里', '谁', '啥')):
@@ -42,13 +49,32 @@ def self_names(text):
     return found
 
 
+def repair_learned_aliases(user):
+    """Recheck only evidence-backed automatic aliases; preserve manual names."""
+    aliases, sources = user.get('aliases'), user.get('alias_sources')
+    if not isinstance(aliases, list) or not isinstance(sources, dict):
+        return False
+    rejected = [name for name in aliases if isinstance(sources.get(name), dict)
+                and sources[name].get('source') == 'explicit_user_message'
+                and sources[name].get('evidence')
+                and name not in {value for value, _ in self_names(sources[name]['evidence'])}]
+    for name in rejected:
+        user.setdefault('rejected_aliases', []).append({'name': name, **sources.pop(name),
+                                                       'reason': 'not_a_self_introduction'})
+        aliases.remove(name)
+    if rejected:
+        del user['rejected_aliases'][:-24]
+    return bool(rejected)
+
+
 def learn_address(user, text, *, message_id='', now=None, block=None):
     if not isinstance(user, dict):
         return False
+    repaired = repair_learned_aliases(user)
     claims = [(name, preferred) for name, preferred in self_names(text)
               if not callable(block) or not block(name)]
     if not claims:
-        return False
+        return repaired
     before = json.dumps(user, ensure_ascii=False, sort_keys=True, default=str)
     aliases = user.setdefault('aliases', [])
     sources = user.setdefault('alias_sources', {})
@@ -70,7 +96,7 @@ def learn_address(user, text, *, message_id='', now=None, block=None):
     for name in list(sources):
         if name not in aliases:
             sources.pop(name, None)
-    return json.dumps(user, ensure_ascii=False, sort_keys=True, default=str) != before
+    return repaired or json.dumps(user, ensure_ascii=False, sort_keys=True, default=str) != before
 
 
 async def own_conversations(host):

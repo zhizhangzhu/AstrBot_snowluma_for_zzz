@@ -532,6 +532,10 @@ def _non_address_candidates(clause: str) -> list[dict[str, Any]]:
         return results
 
     value = _match_value(_HABIT_RE, clause)
+    # Object-first Chinese is common in explicit requests to remember a phrase.
+    phrase_habit = re.fullmatch(r'[“"「]?([^”"」]{1,24})[”"」]?我(?:经常|通常|习惯)(?:说|用)(?:的)?', clause)
+    if not value and phrase_habit:
+        value = _clean_value(phrase_habit.group(1))
     if _valid_general_value(value) and not _TEMPORARY_RE.search(clause):
         results.append(
             _candidate(
@@ -540,7 +544,7 @@ def _non_address_candidates(clause: str) -> list[dict[str, Any]]:
                 label="习惯",
                 kind="habit",
                 value=value,
-                claim_summary=f"沟通习惯：{value}",
+                claim_summary=f"沟通习惯：{'经常说 ' if phrase_habit else ''}{value}",
                 score=0.88,
                 importance=0.61,
             )

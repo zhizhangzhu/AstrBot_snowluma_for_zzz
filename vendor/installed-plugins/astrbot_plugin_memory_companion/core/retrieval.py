@@ -231,7 +231,8 @@ class RetrievalEngine:
                 continue
             memory_platform = _platform_family(getattr(memory, "platform", ""))
             current_platform = _platform_family(getattr(ctx, "platform", ""))
-            if memory_platform and current_platform and memory_platform != current_platform:
+            if (memory_platform and current_platform and memory_platform != current_platform
+                    and not self.policy.registered_platform_alias(memory, ctx)):
                 blocked.append({"id": memory_id, "reason": "other_platform", "content": ""})
                 continue
             owner_visible, owner_reason = self.policy._bot_owner_visible(memory, ctx)
@@ -2662,6 +2663,13 @@ class RetrievalEngine:
             clean_text(getattr(subject, "kind", ""), 40).lower() == "bot"
             and (not subject_id or subject_id in {"self", context_bot_id} or not context_bot_id)
         )
+        # Older remember-tool writes defaulted their subject to the Bot even
+        # for user facts. Keep those typed facts out of the disposable self
+        # timeline; ownership is still checked by the visibility policy.
+        if (memory_type in {"user_profile", "user_preference", "user_habit"}
+                and memory.visibility == "private_pair"
+                and reality not in {"bot_action", "persona_life", "fictional_content"}):
+            return "user_profile"
         # Bot-owned records carry a stronger slot signal than generic promise
         # weights.  Calibrating a schedule often raises ``open_loop_weight``
         # because its text contains "tomorrow" or "remind"; that must not move

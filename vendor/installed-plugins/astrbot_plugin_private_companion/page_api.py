@@ -19617,6 +19617,8 @@ class PrivateCompanionPageApi(
             return self._error("只能整理当前人格下已启用的主要用户资料")
         if not bool(getattr(self.plugin, "enable_companion_growth", False)):
             return self._error("请先开启人格成长与相处连续性")
+        if payload.get("repair_learning_evidence") is True:
+            return self._ok(await self.plugin._repair_companion_learning_evidence(uid))
         if payload.get("recheck_portrait") is True:
             return self._ok(await self.plugin._retry_grounded_portrait_proposals(uid))
         task = self.plugin._create_lifecycle_background_task(
